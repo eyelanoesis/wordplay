@@ -86,10 +86,34 @@
   /* the log toggle only appears where the log is a sheet */
   #logtoggle { display: none; }
   @media (max-width: 720px) { #logtoggle { display: inline-block; } }
+
+  /* ── folded controls (mobile default) ─────────────────────────────────── */
+  /* A single seal button sits in the corner; tapping it unfurls the HUD.
+     Desktop never folds — the class is only applied under the media query. */
+  #fold {
+    display: none;
+    position: fixed; top: 10px; left: 10px; z-index: 6;
+    width: 46px; height: 46px; padding: 0; border-radius: 50%;
+    font-size: 20px; line-height: 46px; text-align: center;
+    background: rgba(233,221,194,.94); color: var(--ink);
+    border: 1px solid rgba(82,56,31,.4);
+    box-shadow: 0 2px 10px rgba(60,40,15,.25);
+  }
+  @media (max-width: 720px) {
+    #fold { display: block; }
+    /* When folded, the HUD is lifted off-screen and the fold button shows. */
+    body.folded .hud { transform: translateY(-140%); pointer-events: none; }
+    body.folded #legend { transform: translateY(160%); pointer-events: none; }
+    .hud { transition: transform .28s ease; }
+    #legend { transition: transform .28s ease; }
+    /* the fold button rotates into an × when the HUD is open */
+    body:not(.folded) #fold { transform: rotate(45deg); }
+  }
 </style>
 </head>
 <body>
 <canvas id="page"></canvas>
+<button id="fold" title="controls" aria-label="show controls">+</button>
 
 <div class="hud">
   <input type="text" id="word" placeholder="a word…" autofocus>
@@ -224126,20 +224150,73 @@ function joinPath(m, s, t, pF, pB) {
 
 // --- sound: sine chimes + the browser's own voice ---
 let AC = null, chimesOn = false, voiceOn = false;
-function tone(freq, amp = 0.14) {
+function tone(freq, amp = 0.14, when = 0, dur = 1.2, type = 'sine') {
   if (!chimesOn) return;
   if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+  const t0 = AC.currentTime + when;
   const osc = AC.createOscillator(), gain = AC.createGain();
+  osc.type = type;
   osc.frequency.value = freq;
-  gain.gain.setValueAtTime(amp, AC.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.0008, AC.currentTime + 1.15);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(amp, t0 + 0.012);       // soft attack
+  gain.gain.exponentialRampToValueAtTime(0.0006, t0 + dur);
   osc.connect(gain).connect(AC.destination);
-  osc.start(); osc.stop(AC.currentTime + 1.2);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
 }
 const CHIME = { seed: 523.25, anagram: 261.63, oneLetter: 293.66, homophone: 329.63,
                 rhyme: 392, fusion: 440, hidden: 587.33, audible: 659.26 };
-function chime(rel) { tone(CHIME[rel || 'seed']); }
-function infection() { tone(185, .09); tone(196.6, .09); }
+
+// ── consonance: how alike two pronunciations sound, in [0,1] ──────────────
+function consonance(a, b) {
+  const pa = pron.get(a), pb = pron.get(b);
+  if (!pa || !pb || !pa.length || !pb.length) return 0.5;   // unknown → neutral
+  const setA = new Set(pa), setB = new Set(pb);
+  let inter = 0; for (const p of setA) if (setB.has(p)) inter++;
+  const jaccard = inter / (setA.size + setB.size - inter);
+  let tail = 0; const m = Math.min(pa.length, pb.length);
+  while (tail < m && pa[pa.length-1-tail] === pb[pb.length-1-tail]) tail++;
+  const tailScore = tail / m;
+  const va = pa.filter(p => VOWELS.has(p)), vb = pb.filter(p => VOWELS.has(p));
+  const vset = new Set(vb); let vs = 0; for (const v of va) if (vset.has(v)) vs++;
+  const vowelScore = va.length ? vs / Math.max(va.length, vb.length) : 0;
+  const lenPen = 1 - Math.abs(pa.length - pb.length) / (pa.length + pb.length);
+  return Math.max(0, Math.min(1, 0.45*jaccard + 0.30*tailScore + 0.15*vowelScore + 0.10*lenPen));
+}
+// Consonant intervals for alike pairs, dissonant ones for unlike pairs.
+const CONSONANT_IV = [12, 7, 5, 9, 4, 3];   // octave, P5, P4, M6, M3, m3
+const DISSONANT_IV = [10, 2, 11, 6, 1];     // m7, M2, M7, tritone, m2
+function intervalFor(c) {
+  if (c >= 0.5) return CONSONANT_IV[Math.min(CONSONANT_IV.length-1, Math.floor((1-c)/0.5*CONSONANT_IV.length))];
+  return DISSONANT_IV[Math.min(DISSONANT_IV.length-1, Math.floor((0.5-c)/0.5*DISSONANT_IV.length))];
+}
+const semis = n => Math.pow(2, n/12);
+
+/// The dimension picks the root pitch (its colour); the phonetic consonance
+/// of the two words picks the interval stacked on top. Alike words ring as an
+/// octave/fifth; unlike words as a tritone/second. You hear the likeness.
+function harmonize(rel, wordA, wordB) {
+  const root = CHIME[rel || 'seed'];
+  tone(root, 0.13);
+  if (wordA && wordB) {
+    const iv = intervalFor(consonance(wordA, wordB));
+    tone(root * semis(iv), 0.10, 0.04);        // second voice, a hair later
+  }
+}
+function chime(rel) { tone(CHIME[rel || 'seed'], 0.13); }
+function infection() { tone(185, .09); tone(196.6, .09, 0, 1.4); }
+
+/// Sound a whole circle as one arpeggiated chord — the harmony of a word's
+/// neighbourhood. A consonant chord means the word lives among words that
+/// sound like it; a clashing chord means its connections pull every which way.
+function soundNeighborhood(host, members) {
+  if (!chimesOn || !members.length) return;
+  const root = CHIME['seed'];
+  tone(root, 0.11, 0, 1.6);
+  members.slice(0, 6).forEach((w, i) => {
+    const iv = intervalFor(consonance(host, w));
+    tone(root * semis(iv), 0.08, 0.07 * (i + 1), 1.5);   // gentle upward roll
+  });
+}
 function speak(word) {
   if (!voiceOn || !('speechSynthesis' in window)) return;
   const u = new SpeechSynthesisUtterance(word);
@@ -224237,7 +224314,10 @@ function expand(host, auto) {
     if (placed > 0) {
       record(auto ? `✦ the codex inscribed ${host} · +${placed}`
                   : `${host}: ${placed} inscriptions`, !!auto);
-      if (auto) infection(); else { chime(M.words[M.index.get(host)].rel); speak(host); }
+      // Manual open: sound the whole neighbourhood as a chord so you hear how
+      // consonant this word's connections are. Auto-growth stays a quiet pulse.
+      if (auto) infection();
+      else { soundNeighborhood(host, found.map(c => c.word)); speak(host); }
     } else {
       record(`${host}: nothing new under this sun`);
     }
@@ -224489,10 +224569,21 @@ function wordAt(clientX, clientY) {
   return best;
 }
 
+const IV_NAME = {0:'unison',1:'minor 2nd',2:'major 2nd',3:'minor 3rd',4:'major 3rd',
+  5:'perfect 4th',6:'tritone',7:'perfect 5th',9:'major 6th',10:'minor 7th',
+  11:'major 7th',12:'octave'};
 function showTip(word, clientX, clientY) {
   if (!word || !word.detail) { tip.style.display = 'none'; return; }
   const ph = pron.get(word.id);
-  tip.textContent = word.detail + (ph ? '\n/' + ph.join(' ') + '/' : '');
+  // If this word hangs off a parent, name how consonant the pair sounds.
+  let harmony = '';
+  if (word.rel && M.current && M.current !== word.id) {
+    const c = consonance(M.current, word.id);
+    const iv = intervalFor(c);
+    const feel = c >= 0.66 ? 'consonant' : c >= 0.4 ? 'tense' : 'dissonant';
+    harmony = `\n♪ ${IV_NAME[iv]} · ${feel} (${c.toFixed(2)})`;
+  }
+  tip.textContent = word.detail + (ph ? '\n/' + ph.join(' ') + '/' : '') + harmony;
   tip.style.display = 'block';
   const tw = tip.offsetWidth || 240;
   tip.style.left = Math.max(8, Math.min(clientX + 14, W - tw - 8)) + 'px';
@@ -224621,7 +224712,7 @@ function go() {
       inscribe(prev, [{ word: st.word, rel: st.rel || 'rhyme',
                         detail: DETAILS[st.rel || 'rhyme'](prev, st.word) }], false);
       record(`${prev} → ${st.word} ${REL_META[st.rel || 'rhyme'].glyph}`);
-      chime(st.rel); speak(st.word);
+      harmonize(st.rel, prev, st.word); speak(st.word);   // hear each hop's consonance
       prev = st.word; i++;
       setTimeout(lay, 500);
     };
@@ -224653,16 +224744,29 @@ document.getElementById('save').addEventListener('click', () => {
 });
 // On phones the log is a bottom sheet; start hidden, toggle with ☰ log.
 const codexlog = document.getElementById('codexlog');
-if (matchMedia('(max-width: 720px)').matches) codexlog.classList.add('hidden');
+const onPhone = matchMedia('(max-width: 720px)').matches;
+if (onPhone) codexlog.classList.add('hidden');
 document.getElementById('logtoggle').addEventListener('click', () => {
   codexlog.classList.toggle('hidden');
 });
+
+// Folded controls on phones: start folded so the codex owns the screen.
+// The + seal unfurls the HUD; it rotates into an × to close; tapping the
+// canvas also folds it back so the page stays unobstructed.
+if (onPhone) document.body.classList.add('folded');
+document.getElementById('fold').addEventListener('click', () => {
+  document.body.classList.toggle('folded');
+});
+canvas.addEventListener('pointerdown', () => {
+  if (onPhone && !document.body.classList.contains('folded'))
+    document.body.classList.add('folded');
+}, true);   // capture phase: fold before the canvas handles the gesture
 
 // legend
 document.getElementById('legend').innerHTML =
   Object.entries(REL_META).map(([k, m]) =>
     `<span><span style="color:${m.color}">${m.glyph}</span> ${m.name}</span>`).join('') +
-  '<span class="hint">touch a word to open its circle · drag to wander · it writes itself</span>';
+  '<span class="hint">turn on ♪ — alike words ring consonant, unlike words clash</span>';
 
 // boot
 loadLexicon();
