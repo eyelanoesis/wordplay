@@ -2,14 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>The Codex — Wordplay</title>
 <style>
   :root { --ink: #52381f; --ink-soft: rgba(82,56,31,.6); }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; }
-  body { font-family: Georgia, serif; color: var(--ink); background: #dccca6; }
-  #page { position: fixed; inset: 0; cursor: grab; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { font-family: Georgia, serif; color: var(--ink); background: #dccca6;
+    -webkit-text-size-adjust: 100%; }
+  /* the canvas owns all gestures; never let the browser pan/zoom the page */
+  #page { position: fixed; inset: 0; cursor: grab; touch-action: none; }
   #page.panning { cursor: grabbing; }
   .hud {
     position: fixed; top: 12px; left: 12px; right: 290px;
@@ -18,7 +20,7 @@
     border-radius: 12px; padding: 9px 12px; z-index: 5; max-width: 900px;
   }
   input[type=text] {
-    font: inherit; font-size: 1rem; padding: 6px 10px; width: 170px;
+    font: inherit; font-size: 16px; padding: 6px 10px; width: 170px;
     border: 1px solid var(--ink-soft); border-radius: 7px;
     background: rgba(255,255,255,.5); color: var(--ink);
   }
@@ -26,6 +28,7 @@
     font: inherit; font-variant: small-caps; letter-spacing: .04em;
     padding: 6px 14px; border: 1px solid var(--ink); border-radius: 7px;
     background: var(--ink); color: #eee3ca; cursor: pointer;
+    touch-action: manipulation;
   }
   button.ghost { background: transparent; color: var(--ink); border-color: var(--ink-soft); }
   button.ghost.on { background: rgba(98,24,16,.12); border-color: #621810; color: #621810; }
@@ -37,6 +40,7 @@
     overflow-y: auto; background: rgba(233,221,194,.95);
     border: 1px solid rgba(82,56,31,.3); border-radius: 12px;
     padding: 12px; z-index: 5; font-size: .78rem; line-height: 1.45;
+    -webkit-overflow-scrolling: touch;
   }
   #codexlog h2 { font-size: .95rem; font-style: italic; margin-bottom: 6px;
     border-bottom: 1px solid rgba(82,56,31,.35); padding-bottom: 5px; }
@@ -55,6 +59,33 @@
     font-size: .78rem; z-index: 6; pointer-events: none; white-space: pre;
     font-family: 'Courier New', monospace;
   }
+
+  /* ── phones & narrow windows ──────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    /* full-width HUD; the log becomes a bottom sheet toggled by a button */
+    .hud {
+      right: 12px; left: 8px; top: 8px; gap: 6px; padding: 8px 10px;
+      max-width: none; justify-content: flex-start;
+    }
+    .hud input[type=text] { width: 42%; flex: 1 1 42%; min-width: 120px; }
+    .hud button { padding: 8px 12px; }        /* bigger tap targets */
+    #count { width: 100%; order: 99; }
+    #status { font-size: .78rem; }
+    #codexlog {
+      top: auto; bottom: 62px; left: 8px; right: 8px; width: auto;
+      max-height: 34vh; transform: translateY(0); transition: transform .25s ease;
+    }
+    #codexlog.hidden { transform: translateY(130%); }
+    #legend {
+      justify-content: center; gap: 8px 12px; padding: 7px 12px 9px;
+      font-size: .68rem; bottom: 8px;
+    }
+    #legend .hint { display: none; }          /* the gesture hint doesn't fit */
+    #tip { max-width: 80vw; white-space: normal; }
+  }
+  /* the log toggle only appears where the log is a sheet */
+  #logtoggle { display: none; }
+  @media (max-width: 720px) { #logtoggle { display: inline-block; } }
 </style>
 </head>
 <body>
@@ -71,6 +102,7 @@
   <button class="ghost" id="chimes" title="each dimension has a note">♪ chimes</button>
   <button class="ghost" id="voice" title="the codex speaks">❝ voice</button>
   <button class="ghost" id="save" title="export the page">⤓ png</button>
+  <button class="ghost" id="logtoggle" title="show the codex log">☰ log</button>
   <span id="status"></span>
 </div>
 
@@ -224120,7 +224152,7 @@ const M = {
   words: [],            // {id, rel, detail, x, y, dx, dy, gen, born, expanded, viral,
                         //  cx, cy, cr, expandedAt, dying}
   index: new Map(),
-  camX: 0, camY: 0, camTarget: null,
+  camX: 0, camY: 0, camTarget: null, zoom: 1,
   current: null, hovered: null,
   lastSpread: 0, lastInteraction: 0,
   autoSpread: true, busy: false,
@@ -224298,8 +224330,8 @@ function hash(str) {
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
   return h >>> 0;
 }
-function sx(x) { return W / 2 + M.camX + x; }
-function sy(y) { return H / 2 + M.camY + y; }
+function sx(x) { return W / 2 + M.camX + x * M.zoom; }
+function sy(y) { return H / 2 + M.camY + y * M.zoom; }
 
 function wobbleCircle(cx, cy, r, seed) {
   ctx.beginPath();
@@ -224438,48 +224470,130 @@ function draw(nowMs) {
   requestAnimationFrame(draw);
 }
 
-// --- interaction ---
+// --- interaction (pointer events: mouse, touch, and pen in one path) ---
+const tip = document.getElementById('tip');
+const pointers = new Map();          // active pointers, for pinch detection
 let dragging = false, moved = 0, lastX = 0, lastY = 0;
-canvas.addEventListener('mousedown', e => {
+let pinchDist = 0;                    // last two-finger distance
+let armed = null;                     // touch: word shown by a first tap
+const isTouch = () => matchMedia('(pointer: coarse)').matches;
+
+function wordAt(clientX, clientY) {
+  const wx = (clientX - W / 2 - M.camX) / M.zoom;
+  const wy = (clientY - H / 2 - M.camY) / M.zoom;
+  let best = null, bd = (isTouch() ? 44 : 34) / M.zoom;  // fatter for fingertips
+  for (const w of M.words) {
+    const d = Math.hypot(w.x - wx, w.y - wy);
+    if (d < bd) { bd = d; best = w; }
+  }
+  return best;
+}
+
+function showTip(word, clientX, clientY) {
+  if (!word || !word.detail) { tip.style.display = 'none'; return; }
+  const ph = pron.get(word.id);
+  tip.textContent = word.detail + (ph ? '\n/' + ph.join(' ') + '/' : '');
+  tip.style.display = 'block';
+  const tw = tip.offsetWidth || 240;
+  tip.style.left = Math.max(8, Math.min(clientX + 14, W - tw - 8)) + 'px';
+  tip.style.top = Math.max(8, clientY - 40) + 'px';
+}
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {         // begin pinch
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+    dragging = false;
+    return;
+  }
   dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
 });
-window.addEventListener('mousemove', e => {
-  if (dragging) {
-    const dx = e.clientX - lastX, dy = e.clientY - lastY;
-    moved += Math.abs(dx) + Math.abs(dy);
-    if (moved > 6) {
-      M.camX += dx; M.camY += dy;
-      M.lastInteraction = Date.now(); M.camTarget = null;
-      canvas.classList.add('panning');
+
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) {   // hover (mouse only)
+    if (e.pointerType === 'mouse') {
+      const w = wordAt(e.clientX, e.clientY);
+      M.hovered = w ? w.id : null;
+      showTip(w, e.clientX, e.clientY);
     }
-    lastX = e.clientX; lastY = e.clientY;
-  } else {
-    const wx = e.clientX - W / 2 - M.camX, wy = e.clientY - H / 2 - M.camY;
-    let best = null, bd = 34;
-    for (const w of M.words) {
-      const d = Math.hypot(w.x - wx, w.y - wy);
-      if (d < bd) { bd = d; best = w; }
-    }
-    M.hovered = best ? best.id : null;
-    const tip = document.getElementById('tip');
-    if (best && best.detail) {
-      const ph = pron.get(best.id);
-      tip.textContent = best.detail + (ph ? '\n/' + ph.join(' ') + '/' : '');
-      tip.style.display = 'block';
-      tip.style.left = Math.min(e.clientX + 14, W - 280) + 'px';
-      tip.style.top = (e.clientY - 40) + 'px';
-    } else tip.style.display = 'none';
+    return;
   }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pointers.size === 2) {          // pinch-zoom about the midpoint
+    const [a, b] = [...pointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist > 0) {
+      const factor = dist / pinchDist;
+      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+      zoomAbout(midX, midY, factor);
+    }
+    pinchDist = dist;
+    M.lastInteraction = Date.now(); M.camTarget = null;
+    return;
+  }
+
+  if (!dragging) return;
+  const dx = e.clientX - lastX, dy = e.clientY - lastY;
+  moved += Math.abs(dx) + Math.abs(dy);
+  if (moved > 6) {
+    M.camX += dx; M.camY += dy;
+    M.lastInteraction = Date.now(); M.camTarget = null;
+    canvas.classList.add('panning');
+    tip.style.display = 'none';
+  }
+  lastX = e.clientX; lastY = e.clientY;
 });
-window.addEventListener('mouseup', e => {
-  const wasDragging = dragging; dragging = false;
+
+function endPointer(e) {
+  const had = pointers.has(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist = 0;
+  if (!had) return;
   canvas.classList.remove('panning');
-  if (!wasDragging || moved > 6) { M.lastInteraction = Date.now(); return; }
-  const wx = e.clientX - W / 2 - M.camX, wy = e.clientY - H / 2 - M.camY;
-  for (const w of M.words) {
-    if (Math.hypot(w.x - wx, w.y - wy) < 34) { expand(w.id, false); return; }
+  const wasDrag = dragging; dragging = false;
+  if (!wasDrag || moved > 6) { M.lastInteraction = Date.now(); return; }
+
+  // A clean tap/click.
+  const w = wordAt(e.clientX, e.clientY);
+  if (e.pointerType === 'mouse') {
+    if (w) expand(w.id, false);
+    return;
   }
-});
+  // Touch: first tap reveals + arms; tapping the armed word opens it;
+  // tapping elsewhere dismisses.
+  if (w && armed === w.id) {
+    tip.style.display = 'none'; armed = null;
+    expand(w.id, false);
+  } else if (w) {
+    armed = w.id; M.hovered = w.id;
+    showTip(w, e.clientX, e.clientY);
+  } else {
+    armed = null; M.hovered = null; tip.style.display = 'none';
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+
+/// Zoom the world about a screen point by scaling the camera offset.
+function zoomAbout(cx, cy, factor) {
+  factor = Math.max(0.5, Math.min(2, factor));
+  const before = { x: cx - W / 2 - M.camX, y: cy - H / 2 - M.camY };
+  M.zoom = Math.max(0.35, Math.min(2.5, (M.zoom || 1) * factor));
+  // keep the pinch midpoint anchored: adjust camera so 'before' stays put
+  M.camX = cx - W / 2 - before.x * factor;
+  M.camY = cy - H / 2 - before.y * factor;
+}
+
+// Desktop: wheel / trackpad pinch also zooms.
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.08 : 0.926;
+  zoomAbout(e.clientX, e.clientY, factor);
+  M.lastInteraction = Date.now(); M.camTarget = null;
+}, { passive: false });
 
 // --- controls ---
 function go() {
@@ -224536,6 +224650,12 @@ document.getElementById('save').addEventListener('click', () => {
   a.download = `codex-${M.current || 'page'}.png`;
   a.href = canvas.toDataURL('image/png');
   a.click();
+});
+// On phones the log is a bottom sheet; start hidden, toggle with ☰ log.
+const codexlog = document.getElementById('codexlog');
+if (matchMedia('(max-width: 720px)').matches) codexlog.classList.add('hidden');
+document.getElementById('logtoggle').addEventListener('click', () => {
+  codexlog.classList.toggle('hidden');
 });
 
 // legend
