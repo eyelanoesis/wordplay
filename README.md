@@ -91,6 +91,12 @@ self-contained page — the pronouncing lexicon (ENABLE ∩ CMUdict, ~51k words)
 rides inside the file (1.3 MB). It runs offline in any browser on any OS,
 Linux included. Double-click it or send it to a friend.
 
+## The story
+
+[docs/BUILD-LOG.md](docs/BUILD-LOG.md) — how this went from one pun to
+a living codex in a single night of human-AI collaboration, wrong
+turns included.
+
 ## Build & run
 
 ```sh
