@@ -101,6 +101,15 @@ public struct PhoneticDictionary: Sendable {
         homophoneIndex[phones.joined(separator: " ")] ?? []
     }
 
+    /// Every word with its first (primary) pronunciation, stress stripped —
+    /// the raw material for phoneme-level neighborhood searches.
+    public func allStrippedPronunciations() -> [(word: String, phones: [String])] {
+        pronunciations.compactMap { word, prons in
+            guard let first = prons.first else { return nil }
+            return (word, first.map(Self.stripStress))
+        }
+    }
+
     // MARK: Helpers
 
     private static func stripStress(_ phoneme: String) -> String {
