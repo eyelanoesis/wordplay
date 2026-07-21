@@ -2,7 +2,7 @@
 
 A native macOS (SwiftUI) **wordplay toolkit**, fully offline. It began as a
 clone of the **Internet Anagram Server** advanced form
-(wordsmith.org/anagram/advanced.html) and now bundles eight tools behind a
+(wordsmith.org/anagram/advanced.html) and now bundles nine tools behind a
 sidebar:
 
 1. **Anagrams** — rearrange every letter of a phrase into other words (the
@@ -23,7 +23,13 @@ sidebar:
    one-word oronyms.) Finds every dictionary word that phonetically overlaps
    your word's start or end, ranks by overlap length, and lists the bonus words
    hiding in the fused phoneme stream (a schwa may stand in for any vowel).
-8. **Web** — everything is connected. Two pages over the same engines:
+8. **Minimal Pairs** — the phonology tool: every word that differs by exactly
+   one *phoneme* (`pat`/`bat`, `sip`/`ship`, `bit`/`beat`), grouped by the
+   distinctive feature that separates the pair (voicing, place, manner, vowel
+   height/backness, rounding) from an ARPABET feature table. Works in sound,
+   not spelling — so it catches contrasts orthography hides — and every word
+   is tappable to hear it spoken.
+9. **Web** — everything is connected. Two pages over the same engines:
    - **The codex** (default): an aged-parchment page where each word is
      inscribed at the center of a hand-drawn sigil circle, its connections
      written in curved script around the rim, each bearing the glyph of its
@@ -77,6 +83,8 @@ dictionary words, with the same filters as the advanced form:
   - `Fusion.swift` — phonetic overlap search + audible-bonus-word scan.
   - `Connections.swift` — aggregates every relation type into one word-web.
   - `PathFinder.swift` — six-degrees bidirectional BFS across the mixed graph.
+  - `MinimalPairs.swift` — one-phoneme-apart neighbours, labelled by the
+    distinctive feature that differs (ARPABET feature table).
 - `Sources/Anagrammer/` — SwiftUI front end. `WordStore` loads the dictionary
   once and vends every engine (CMUdict loads lazily on first use of the Rhymes
   tab). `RootView` is the sidebar; one `*View.swift` per tool. Queries run on
@@ -90,6 +98,12 @@ dictionary words, with the same filters as the advanced form:
 self-contained page — the pronouncing lexicon (ENABLE ∩ CMUdict, ~51k words)
 rides inside the file (1.3 MB). It runs offline in any browser on any OS,
 Linux included. Double-click it or send it to a friend.
+
+## For developers
+
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — build/test/package, the code
+layout, the pattern for adding a tool, project conventions, the codex design
+direction, and the roadmap. Start here to pick the project up cold.
 
 ## The story
 
