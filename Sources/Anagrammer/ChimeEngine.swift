@@ -11,12 +11,20 @@ final class ChimeEngine: @unchecked Sendable {
     var voiceEnabled = false
     private let synthesizer = AVSpeechSynthesizer()
 
-    /// Pronounce a word aloud, softly and unhurried.
+    /// Pronounce a word aloud, softly and unhurried. Honors the voice toggle.
     func speak(_ word: String) {
-        guard voiceEnabled, !muted else { return }
+        guard voiceEnabled else { return }
+        speakNow(word)
+    }
+
+    /// Pronounce a word immediately — for places where speaking IS the user's
+    /// explicit action (e.g. tapping a minimal pair to hear the contrast).
+    /// Bypasses the ambient voice toggle but still honors mute.
+    func speakNow(_ word: String) {
+        guard !muted else { return }
         let utterance = AVSpeechUtterance(string: word)
         utterance.rate = 0.42
-        utterance.volume = 0.75
+        utterance.volume = 0.8
         utterance.pitchMultiplier = 0.95
         synthesizer.speak(utterance)
     }

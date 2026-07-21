@@ -26,6 +26,7 @@ enum Tool: String, CaseIterable, Identifiable {
     case cryptic = "Cryptic"
     case rhymes = "Rhymes & Sounds"
     case fusions = "Fusions"
+    case minimalPairs = "Minimal Pairs"
     case web = "Web"
     case favorites = "Favorites"
     case history = "History"
@@ -40,13 +41,14 @@ enum Tool: String, CaseIterable, Identifiable {
         case .cryptic: return "questionmark.diamond"
         case .rhymes: return "waveform"
         case .fusions: return "arrow.triangle.merge"
+        case .minimalPairs: return "waveform.path.ecg"
         case .web: return "point.3.connected.trianglepath.dotted"
         case .favorites: return "star"
         case .history: return "clock.arrow.circlepath"
         }
     }
 
-    static var toolsSection: [Tool] { [.anagrams, .rack, .pattern, .ladder, .cryptic, .rhymes, .fusions, .web] }
+    static var toolsSection: [Tool] { [.anagrams, .rack, .pattern, .ladder, .cryptic, .rhymes, .fusions, .minimalPairs, .web] }
     static var librarySection: [Tool] { [.favorites, .history] }
 }
 
@@ -102,6 +104,7 @@ struct RootView: View {
         case .cryptic: gated { CrypticView() }
         case .rhymes: gated { RhymesView() }
         case .fusions: gated { FusionView() }
+        case .minimalPairs: gated { MinimalPairsView() }
         case .web: gated { WebExplorerView() }
         case .favorites: FavoritesView()
         case .history: HistoryView()

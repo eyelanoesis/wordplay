@@ -33,6 +33,7 @@ final class WordStore: ObservableObject {
     private(set) var cryptic: CrypticHelper?
     private(set) var phonetics: PhoneticDictionary?
     private var fusionCache: FusionFinder?
+    private var minimalPairCache: MinimalPairFinder?
 
     func loadIfNeeded() {
         guard !isReady else { return }
@@ -97,6 +98,18 @@ final class WordStore: ObservableObject {
             FusionFinder(phonetics: phonetics, wordList: wordList)
         }.value
         fusionCache = finder
+        return finder
+    }
+
+    /// Minimal-pair finder over CMUdict. Builds a wildcard index once
+    /// (~1s over ~135k pronunciations) off-main, then cached.
+    func minimalPairFinder() async -> MinimalPairFinder? {
+        if let cached = minimalPairCache { return cached }
+        guard let phonetics else { return nil }
+        let finder = await Task.detached(priority: .userInitiated) {
+            MinimalPairFinder(phonetics: phonetics)
+        }.value
+        minimalPairCache = finder
         return finder
     }
 
