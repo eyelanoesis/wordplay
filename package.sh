@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 APP_NAME="Wordplay"          # bundle / display name
 EXEC_NAME="Anagrammer"        # SPM product (binary) name
 BUNDLE_ID="org.abstreet.wordplay"
-VERSION="6.5.0"
+VERSION="7.0.0"
 BUILD_DIR=".build/release"
 # Every version gets its own bundle, side by side; nothing is overwritten.
 APP="dist/${APP_NAME}-${VERSION}.app"
@@ -35,6 +35,7 @@ fi
 # Bundle.main fallback resolves even if Bundle.module can't locate the bundle.
 cp "Sources/${EXEC_NAME}/Resources/cmudict.dict" "${CONTENTS}/Resources/cmudict.dict"
 cp "Sources/${EXEC_NAME}/Resources/enable.txt" "${CONTENTS}/Resources/enable.txt"
+cp "Sources/${EXEC_NAME}/Resources/biblical.txt" "${CONTENTS}/Resources/biblical.txt"
 
 cat > "${CONTENTS}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -58,7 +59,7 @@ cat > "${CONTENTS}/Info.plist" <<PLIST
 PLIST
 
 echo "==> Code signing (ad-hoc)…"
-codesign --force --deep --sign - "${APP}"
+codesign --force --sign - "${APP}"    # single binary; --deep is deprecated
 
 # Unversioned name stays as a convenience alias for the latest build.
 rm -rf "dist/${APP_NAME}.app"

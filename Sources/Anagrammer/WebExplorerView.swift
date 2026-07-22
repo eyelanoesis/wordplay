@@ -73,6 +73,74 @@ enum WebDimensions {
     }
 }
 
+// MARK: - Trackpad zoom (pinch + two-finger scroll)
+
+/// Catches pinch and scroll events over the page without stealing clicks from
+/// the canvas beneath. Uses a local event monitor, so SwiftUI's own gestures
+/// (drag-to-pan, click-to-grow) keep working; events over real scroll views
+/// (the log panel) are left alone.
+struct ZoomCatcher: NSViewRepresentable {
+    var onZoom: (CGFloat, CGPoint) -> Void   // (factor, cursor in view coords)
+
+    final class Catcher: NSView {
+        var onZoom: ((CGFloat, CGPoint) -> Void)?
+        private var monitor: Any?
+
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }  // never block clicks
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            // Tear the monitor down when leaving the window (deinit cannot,
+            // under strict concurrency).
+            if newWindow == nil, let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard monitor == nil, window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) {
+                [weak self] event in
+                guard let self, let window = self.window, event.window === window else { return event }
+                let p = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(p) else { return event }
+                // Leave real scroll views (the log panel) to their own scrolling.
+                if let hit = window.contentView?.hitTest(event.locationInWindow) {
+                    var v: NSView? = hit
+                    while let cur = v {
+                        if cur is NSScrollView { return event }
+                        v = cur.superview
+                    }
+                }
+                switch event.type {
+                case .magnify:
+                    self.onZoom?(1 + event.magnification, p)
+                    return nil
+                case .scrollWheel:
+                    let dy = event.scrollingDeltaY
+                    guard abs(dy) > 0.01 else { return event }
+                    self.onZoom?(exp(dy * (event.hasPreciseScrollingDeltas ? 0.004 : 0.02)), p)
+                    return nil
+                default:
+                    return event
+                }
+            }
+        }
+
+    }
+
+    func makeNSView(context: Context) -> Catcher {
+        let v = Catcher()
+        v.onZoom = onZoom
+        return v
+    }
+
+    func updateNSView(_ v: Catcher, context: Context) { v.onZoom = onZoom }
+}
+
 struct Cell: Hashable {
     var x: Int, y: Int
 }
@@ -104,7 +172,7 @@ final class CrosswordModel: ObservableObject {
     @Published var status: String?
     @Published var isBusy = false
     @Published private(set) var log: [String] = []
-    @Published var autoSpread = true
+    @Published var autoSpread = false
 
     private(set) var placed: [Placed] = []
     private(set) var letters: [Cell: Character] = [:]
@@ -115,8 +183,9 @@ final class CrosswordModel: ObservableObject {
     var lastSpread = Date.distantPast
     let maxWords = 120
 
-    // Camera: pan offset in points; the grid is infinite.
+    // Camera: pan offset in points; the grid is infinite. Zoom scales the page.
     var camera = CGPoint.zero
+    var zoom: CGFloat = 1
 
     private var wordIndex: [String: Int] = [:]
 
@@ -129,12 +198,13 @@ final class CrosswordModel: ObservableObject {
 
     func record(_ line: String) {
         log.append("[\(Self.clock.string(from: Date()))] \(line)")
+        if log.count > 200 { log.removeFirst(log.count - 200) }
     }
 
     func clear() {
         placed = []; letters = [:]; crossings = [:]; owners = [:]
         wordIndex = [:]; current = nil; hovered = nil
-        status = nil; log = []; camera = .zero
+        status = nil; log = []; camera = .zero; zoom = 1
         revision += 1
     }
 
@@ -237,24 +307,43 @@ final class CrosswordModel: ObservableObject {
 
 // MARK: - The view
 
-/// The Web tool: two ways of seeing the same web. The codex (sigil circles on
-/// parchment) is the default; this crossword page is the toggle.
+/// The Web tool: three ways of seeing the same web. The codex (sigil circles
+/// on parchment) is the default; the crossword and the orrery (3D) are
+/// toggles. The codex and the orrery share one model — the same inscriptions,
+/// seen flat or in the round.
 struct WebExplorerView: View {
     @AppStorage("webPageMode") private var mode = "sigil"
+    @StateObject private var codexModel = SigilModel()
 
     var body: some View {
         ZStack {
-            if mode == "sigil" { SigilPageView() } else { CrosswordPageView() }
+            switch mode {
+            case "crossword": CrosswordPageView()
+            case "orrery": OrreryPageView(model: codexModel)
+            default: SigilPageView(model: codexModel)
+            }
         }
         .overlay(alignment: .topTrailing) {
             Picker("", selection: $mode) {
-                Image(systemName: "seal").tag("sigil").help("the codex")
-                Image(systemName: "squareshape.split.3x3").tag("crossword").help("the crossword")
+                Image(systemName: "seal").tag("sigil")
+                    .help("The codex: sigil circles on parchment.")
+                Image(systemName: "squareshape.split.3x3").tag("crossword")
+                    .help("The crossword: the same web as a self-writing crossword grid.")
+                Image(systemName: "globe").tag("orrery")
+                    .help("The orrery: the codex's own inscriptions in 3D — drag to orbit, scroll or pinch to dolly, ⌥-drag to pan.")
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 90)
+            .frame(width: 130)
             .padding(.top, 14).padding(.trailing, 270)
+        }
+        .onAppear {
+            if codexModel.words.isEmpty {
+                let restored = codexModel.restore()
+                if restored > 0 {
+                    codexModel.record("the codex remembers: \(restored) inscriptions restored.")
+                }
+            }
         }
     }
 }
@@ -268,9 +357,10 @@ struct CrosswordPageView: View {
 
     @State private var word = ""
     @State private var toWord = ""
-    @AppStorage("webMuted") private var muted = false
-    @AppStorage("webRelationsOn") private var relationsOnRaw = WebDimensions.allRaw
-    @AppStorage("webSpreadSeconds") private var spreadSeconds = 3.0
+    @AppStorage("web7.soundOn") private var soundOn = false
+    @AppStorage("web7.dims") private var relationsOnRaw = ""
+    @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
+    @AppStorage("web7.autoWrite") private var autoWrite = false
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -309,7 +399,8 @@ struct CrosswordPageView: View {
         .environment(\.colorScheme, .light)
         .onAppear {
             store.loadPhonetics()
-            ChimeEngine.shared.muted = muted
+            ChimeEngine.shared.muted = !soundOn
+            model.autoSpread = autoWrite
         }
         .task { await spreadLoop() }
     }
@@ -320,7 +411,7 @@ struct CrosswordPageView: View {
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(500))
             guard model.autoSpread, !model.isBusy, !model.isFull, store.isReady,
-                  !model.placed.isEmpty,
+                  !model.placed.isEmpty, !relationsOn.isEmpty,
                   Date().timeIntervalSince(model.lastSpread) >= max(1, spreadSeconds),
                   let host = model.placed.filter({ !$0.expanded }).randomElement()
             else { continue }
@@ -331,8 +422,12 @@ struct CrosswordPageView: View {
 
     private func expand(_ target: String, auto: Bool = false) {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
-        model.isBusy = true
         let relations = relationsOn
+        guard !relations.isEmpty else {
+            model.status = "all seven dimensions are off — switch some on in the ☰ menu or click the legend below"
+            return
+        }
+        model.isBusy = true
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
@@ -491,22 +586,25 @@ struct CrosswordPageView: View {
                     .controlSize(.small)
                     .fixedSize()
                     .help("How often the puzzle grows on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to automatic growth; clicking a word grows it immediately.")
-                Button { model.autoSpread.toggle() } label: {
-                    Image(systemName: model.autoSpread ? "pause.fill" : "play.fill")
+                Button {
+                    autoWrite.toggle()
+                    model.autoSpread = autoWrite
+                } label: {
+                    Image(systemName: autoWrite ? "pause.fill" : "play.fill")
                 }
                     .controlSize(.small)
-                    .tint(model.autoSpread ? nil : Color(red: 0.85, green: 0.25, blue: 0.25))
-                    .help(model.autoSpread
+                    .tint(autoWrite ? Color(red: 0.85, green: 0.25, blue: 0.25) : nil)
+                    .help(autoWrite
                         ? "The puzzle is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it picks an unexpanded word and weaves its connections (shown in red). Click to pause — you can still grow words by clicking them."
-                        : "Automatic growth is paused. Click to let the puzzle write itself again.")
+                        : "Self-writing is OFF (the default). Click to let the puzzle grow on its own; needs at least one dimension switched on.")
                 Button {
-                    muted.toggle()
-                    ChimeEngine.shared.muted = muted
-                } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }
+                    soundOn.toggle()
+                    ChimeEngine.shared.muted = !soundOn
+                } label: { Image(systemName: soundOn ? "speaker.wave.2" : "speaker.slash") }
                     .controlSize(.small)
-                    .help(muted
-                        ? "Sound is muted. Click to hear the dimension chimes again."
-                        : "Mute all sound — each dimension plays its own pentatonic note when a word is woven; self-growth plays a low detuned interval.")
+                    .help(soundOn
+                        ? "Sound is ON — each dimension plays its own pentatonic note when a word is woven; self-growth plays a low detuned interval. Click to silence."
+                        : "Sound is OFF (the default). Click to hear a chime for each dimension as words are woven.")
                 Button { exportPNG() } label: { Image(systemName: "camera") }
                     .controlSize(.small)
                     .disabled(model.placed.isEmpty)
@@ -547,9 +645,9 @@ struct CrosswordPageView: View {
                 .help("\(r.rawValue): \(r.explanation). \(on ? "On — click to stop this dimension from weaving new words." : "Off — click to allow it again.")")
             }
             Spacer()
-            Text("click a word to grow it · drag to pan · red words grew on their own")
+            Text("click a word to grow it · drag to pan · scroll/pinch to zoom · red words grew on their own")
                 .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
-                .help("Click any word on the grid to weave its connections around it. Drag anywhere to pan the endless page. Words written in red ink were added by the puzzle itself, not by you. Hover over a word to see why it is connected.")
+                .help("Click any word on the grid to weave its connections around it. Drag anywhere to pan the endless page; pinch or two-finger scroll to zoom. Words written in red ink were added by the puzzle itself, not by you. Hover over a word to see why it is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(paper.opacity(0.9), in: Capsule())
@@ -598,7 +696,7 @@ struct CrosswordPageView: View {
 
     private var page: some View {
         GeometryReader { geo in
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 Canvas { ctx, size in
                     drawPage(ctx, size: size, now: timeline.date)
                 }
@@ -611,6 +709,7 @@ struct CrosswordPageView: View {
                 case .ended: model.hovered = nil
                 }
             }
+            .overlay(ZoomCatcher(onZoom: applyZoom))
         }
         .background(paper)
         .ignoresSafeArea(edges: .bottom)
@@ -620,39 +719,60 @@ struct CrosswordPageView: View {
         CGPoint(x: size.width / 2 + model.camera.x, y: size.height / 2 + model.camera.y)
     }
 
-    private func rect(of cell: Cell, in size: CGSize) -> CGRect {
-        let o = origin(in: size)
-        return CGRect(x: o.x + CGFloat(cell.x) * cellSize,
-                      y: o.y + CGFloat(cell.y) * cellSize,
-                      width: cellSize, height: cellSize)
+    /// A cell's rectangle in world coordinates (pre-zoom).
+    private func worldRect(of cell: Cell) -> CGRect {
+        CGRect(x: CGFloat(cell.x) * cellSize, y: CGFloat(cell.y) * cellSize,
+               width: cellSize, height: cellSize)
     }
 
     private func cellAt(_ point: CGPoint) -> Cell {
         let o = origin(in: canvasSize)
-        return Cell(x: Int(floor((point.x - o.x) / cellSize)),
-                    y: Int(floor((point.y - o.y) / cellSize)))
+        let z = model.zoom
+        return Cell(x: Int(floor((point.x - o.x) / z / cellSize)),
+                    y: Int(floor((point.y - o.y) / z / cellSize)))
+    }
+
+    /// Zoom about the cursor: the world point under the pointer stays put.
+    private func applyZoom(_ factor: CGFloat, at p: CGPoint) {
+        let old = model.zoom
+        let new = min(4, max(0.25, old * factor))
+        guard new != old else { return }
+        let o = origin(in: canvasSize)
+        let world = CGPoint(x: (p.x - o.x) / old, y: (p.y - o.y) / old)
+        model.zoom = new
+        model.camera.x = p.x - canvasSize.width / 2 - world.x * new
+        model.camera.y = p.y - canvasSize.height / 2 - world.y * new
     }
 
     private func drawPage(_ ctx: GraphicsContext, size: CGSize, now: Date) {
-        // Faint ruled grid across the whole page.
-        var grid = Path()
         let o = origin(in: size)
-        var gx = o.x.truncatingRemainder(dividingBy: cellSize)
-        while gx < size.width {
-            grid.move(to: CGPoint(x: gx, y: 0)); grid.addLine(to: CGPoint(x: gx, y: size.height))
+        let z = model.zoom
+        var w = ctx
+        w.translateBy(x: o.x, y: o.y)
+        w.scaleBy(x: z, y: z)
+        let viewport = CGRect(x: -o.x / z, y: -o.y / z,
+                              width: size.width / z, height: size.height / z)
+
+        // Faint ruled grid across the visible page.
+        var grid = Path()
+        var gx = (viewport.minX / cellSize).rounded(.down) * cellSize
+        while gx < viewport.maxX {
+            grid.move(to: CGPoint(x: gx, y: viewport.minY))
+            grid.addLine(to: CGPoint(x: gx, y: viewport.maxY))
             gx += cellSize
         }
-        var gy = o.y.truncatingRemainder(dividingBy: cellSize)
-        while gy < size.height {
-            grid.move(to: CGPoint(x: 0, y: gy)); grid.addLine(to: CGPoint(x: size.width, y: gy))
+        var gy = (viewport.minY / cellSize).rounded(.down) * cellSize
+        while gy < viewport.maxY {
+            grid.move(to: CGPoint(x: viewport.minX, y: gy))
+            grid.addLine(to: CGPoint(x: viewport.maxX, y: gy))
             gy += cellSize
         }
-        ctx.stroke(grid, with: .color(inkDark.opacity(0.045)), lineWidth: 1)
+        w.stroke(grid, with: .color(inkDark.opacity(0.045)), lineWidth: 1 / z)
 
         guard !model.placed.isEmpty else {
             ctx.draw(
                 Text(store.isReady
-                     ? "type a word — the crossword writes itself"
+                     ? "type a word — then grow it, or press play to let it write itself"
                      : "loading dictionary…")
                     .font(.system(.title3, design: .monospaced))
                     .foregroundStyle(inkDark.opacity(0.35)),
@@ -668,8 +788,8 @@ struct CrosswordPageView: View {
             let isHovered = entry.id == model.hovered
             for (k, ch) in entry.letters.enumerated() {
                 let cell = entry.cell(k)
-                let r = rect(of: cell, in: size).insetBy(dx: 1.2, dy: 1.2)
-                guard r.maxX > 0, r.minX < size.width, r.maxY > 0, r.minY < size.height else { continue }
+                let r = worldRect(of: cell).insetBy(dx: 1.2, dy: 1.2)
+                guard r.intersects(viewport) else { continue }
 
                 let fill: Color
                 if let crossTint = model.crossings[cell] {
@@ -680,18 +800,18 @@ struct CrosswordPageView: View {
                     fill = .white
                 }
                 let box = Path(roundedRect: r, cornerRadius: 4)
-                ctx.fill(box, with: .color(fill.opacity(Double(grown))))
+                w.fill(box, with: .color(fill.opacity(Double(grown))))
                 let border: Color = isCurrent
                     ? inkDark
                     : (isHovered ? inkDark.opacity(0.7) : inkDark.opacity(0.22))
-                ctx.stroke(box, with: .color(border.opacity(Double(grown))),
-                           lineWidth: isCurrent ? 1.8 : 1)
+                w.stroke(box, with: .color(border.opacity(Double(grown))),
+                         lineWidth: isCurrent ? 1.8 : 1)
 
                 let pulse = isCurrent ? 0.75 + 0.25 * (1 + sin(t * 2.2)) / 2 : 1.0
                 let letterColor = entry.viral
                     ? Color(red: 0.72, green: 0.15, blue: 0.12)
                     : inkDark
-                ctx.draw(
+                w.draw(
                     Text(String(ch).uppercased())
                         .font(.system(size: cellSize * 0.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(letterColor.opacity(Double(grown) * pulse)),
@@ -719,7 +839,10 @@ struct CrosswordPageView: View {
             .foregroundStyle(inkDark.opacity(0.9))
         let resolved = ctx.resolve(text)
         let measured = resolved.measure(in: CGSize(width: 420, height: 120))
-        let anchor = rect(of: entry.cell(0), in: size)
+        let o = origin(in: size)
+        let wr = worldRect(of: entry.cell(0))
+        let anchor = CGRect(x: o.x + wr.minX * model.zoom, y: o.y + wr.minY * model.zoom,
+                            width: wr.width * model.zoom, height: wr.height * model.zoom)
         var cardOrigin = CGPoint(x: anchor.minX, y: anchor.minY - measured.height - 16)
         cardOrigin.x = min(max(cardOrigin.x, 8), size.width - measured.width - 8)
         if cardOrigin.y < 8 { cardOrigin.y = anchor.maxY + 12 }

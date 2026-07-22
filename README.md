@@ -29,7 +29,12 @@ sidebar:
    height/backness, rounding) from an ARPABET feature table. Works in sound,
    not spelling — so it catches contrasts orthography hides — and every word
    is tappable to hear it spoken.
-9. **Web** — everything is connected. Two pages over the same engines:
+9. **Web** — everything is connected. Three pages over the same engines
+   (the codex and the orrery share one model — one web, seen flat or in the
+   round). Every automatic behavior is **off by default**: the seven relation
+   dimensions, self-writing, sound, and voice all start dark and are switched
+   on per session (dropdown checkboxes or the clickable legend). Pinch or
+   two-finger scroll zooms every page.
    - **The codex** (default): an aged-parchment page where each word is
      inscribed at the center of a hand-drawn sigil circle, its connections
      written in curved script around the rim, each bearing the glyph of its
@@ -43,11 +48,17 @@ sidebar:
    - **The crossword** (toggle): the same web as a self-writing crossword on
      an endless grid — words physically crossing at shared letters, crossing
      cells tinted by dimension.
+   - **The orrery** (toggle): the codex's inscriptions in 3D — words chained
+     outward from the seed inside faint armillary rings, navigated like a 3D
+     modelling app: drag to orbit, ⌥-drag to pan, scroll/pinch to dolly.
    Each dimension has a pentatonic note (pure sine synthesis); self-growth
    plays a low detuned infection-interval. The camera button exports either
    page as a retina PNG.
 
-Everything runs locally — no network, no rate limit.
+Everything runs locally — no network, no rate limit. Three switchable
+dictionaries (sidebar footer): **Scrabble (ENABLE)** — the clean default,
+**System** — 236k words with the archaic tail, and **Biblical (KJV)** — a
+curated lexicon of names, places, and King James vocabulary.
 
 ## The Anagrams tool
 

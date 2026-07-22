@@ -41,19 +41,21 @@ final class SigilModel: ObservableObject {
         var circleRadius: CGFloat = 0
         var expandedAt: Date?       // when its circle was drawn
         var dying: Date?            // fading out; reaped when the ink is gone
+        var parent: String? = nil   // the word whose circle this one sits on
     }
 
     @Published private(set) var revision = 0
     @Published var status: String?
     @Published var isBusy = false
     @Published private(set) var log: [String] = []
-    @Published var autoSpread = true
+    @Published var autoSpread = false
 
     private(set) var words: [SWord] = []
     var current: String?
     var hovered: String?
     var lastSpread = Date.distantPast
     var camera = CGPoint.zero
+    var zoom: CGFloat = 1
     var cameraTarget: CGPoint?      // the codex pulls the eye toward new ink
     var lastInteraction = Date.distantPast
     let maxWords = 110
@@ -69,12 +71,13 @@ final class SigilModel: ObservableObject {
 
     func record(_ line: String) {
         log.append("[\(Self.clock.string(from: Date()))] \(line)")
+        if log.count > 200 { log.removeFirst(log.count - 200) }
     }
 
     func clear() {
         words = []; index = [:]
         current = nil; hovered = nil; status = nil; log = []
-        camera = .zero
+        camera = .zero; zoom = 1
         revision += 1
         saveSoon()
     }
@@ -127,6 +130,7 @@ final class SigilModel: ObservableObject {
                                outDir: CGVector(dx: cos(angle), dy: sin(angle)),
                                generation: host.generation + 1, born: now)
             member.viral = viral
+            member.parent = word
             index[connection.word] = words.count
             words.append(member)
             placedCount += 1
@@ -173,6 +177,7 @@ final class SigilModel: ObservableObject {
         var words: [SWord]
         var cameraX: CGFloat
         var cameraY: CGFloat
+        var zoom: CGFloat?
         var current: String?
         var log: [String]
     }
@@ -196,6 +201,7 @@ final class SigilModel: ObservableObject {
             guard let self, self.saveGeneration == generation else { return }
             let snapshot = Snapshot(words: self.words,
                                     cameraX: self.camera.x, cameraY: self.camera.y,
+                                    zoom: self.zoom,
                                     current: self.current,
                                     log: Array(self.log.suffix(40)))
             if let data = try? JSONEncoder().encode(snapshot) {
@@ -212,6 +218,7 @@ final class SigilModel: ObservableObject {
         words = snapshot.words.filter { $0.dying == nil }
         index = Dictionary(uniqueKeysWithValues: words.enumerated().map { ($1.id, $0) })
         camera = CGPoint(x: snapshot.cameraX, y: snapshot.cameraY)
+        zoom = snapshot.zoom ?? 1
         current = snapshot.current
         log = snapshot.log
         revision += 1
@@ -236,14 +243,15 @@ final class SigilModel: ObservableObject {
 struct SigilPageView: View {
     @EnvironmentObject var store: WordStore
     @EnvironmentObject var history: HistoryStore
-    @StateObject private var model = SigilModel()
+    @ObservedObject var model: SigilModel
 
     @State private var word = ""
     @State private var toWord = ""
-    @AppStorage("webMuted") private var muted = false
-    @AppStorage("webRelationsOn") private var relationsOnRaw = WebDimensions.allRaw
-    @AppStorage("webSpreadSeconds") private var spreadSeconds = 3.0
-    @State private var voiceOn = false
+    @AppStorage("web7.soundOn") private var soundOn = false
+    @AppStorage("web7.dims") private var relationsOnRaw = ""
+    @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
+    @AppStorage("web7.autoWrite") private var autoWrite = false
+    @AppStorage("web7.voiceOn") private var voiceOn = false
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -281,13 +289,9 @@ struct SigilPageView: View {
         .environment(\.colorScheme, .light)
         .onAppear {
             store.loadPhonetics()
-            ChimeEngine.shared.muted = muted
-            if model.words.isEmpty {
-                let restored = model.restore()
-                if restored > 0 {
-                    model.record("the codex remembers: \(restored) inscriptions restored.")
-                }
-            }
+            ChimeEngine.shared.muted = !soundOn
+            ChimeEngine.shared.voiceEnabled = voiceOn
+            model.autoSpread = autoWrite
         }
         .task { await spreadLoop() }
     }
@@ -307,7 +311,7 @@ struct SigilPageView: View {
                 ChimeEngine.shared.play(rawFrequency: 130.8, amplitude: 0.06)
             }
             guard model.autoSpread, !model.isBusy, !model.isFull, store.isReady,
-                  !model.words.isEmpty,
+                  !model.words.isEmpty, !relationsOn.isEmpty,
                   now.timeIntervalSince(model.lastSpread) >= max(1, spreadSeconds) else { continue }
             // Mostly open new circles; sometimes return to an old one and
             // deepen it with connections missed the first time.
@@ -327,8 +331,12 @@ struct SigilPageView: View {
 
     private func expand(_ target: String, auto: Bool = false) {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
-        model.isBusy = true
         let relations = relationsOn
+        guard !relations.isEmpty else {
+            model.status = "all seven dimensions are set aside — switch some on in the ☰ menu or touch the legend below"
+            return
+        }
+        model.isBusy = true
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
@@ -476,22 +484,25 @@ struct SigilPageView: View {
                     .controlSize(.small)
                     .fixedSize()
                     .help("How often the codex writes on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to the self-writing; opening a circle by hand is immediate.")
-                Button { model.autoSpread.toggle() } label: {
-                    Image(systemName: model.autoSpread ? "pause.fill" : "play.fill")
+                Button {
+                    autoWrite.toggle()
+                    model.autoSpread = autoWrite
+                } label: {
+                    Image(systemName: autoWrite ? "pause.fill" : "play.fill")
                 }
                     .controlSize(.small)
-                    .tint(model.autoSpread ? nil : ochre)
-                    .help(model.autoSpread
+                    .tint(autoWrite ? ochre : nil)
+                    .help(autoWrite
                         ? "The codex is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it opens a new circle or returns to deepen an old one (marked ✦ in the log, red ochre ink on the page). Click to still the pen — you can still open circles by clicking words."
-                        : "The pen is stilled. Click to let the codex write itself again.")
+                        : "The pen is stilled (the default). Click to let the codex write itself; needs at least one dimension switched on.")
                 Button {
-                    muted.toggle()
-                    ChimeEngine.shared.muted = muted
-                } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }
+                    soundOn.toggle()
+                    ChimeEngine.shared.muted = !soundOn
+                } label: { Image(systemName: soundOn ? "speaker.wave.2" : "speaker.slash") }
                     .controlSize(.small)
-                    .help(muted
-                        ? "Sound is muted. Click to hear the codex again."
-                        : "Mute all sound — each dimension rings its own pentatonic note when inscribed, self-growth sounds a low detuned interval, and the spoken voice falls silent too.")
+                    .help(soundOn
+                        ? "Sound is ON — each dimension rings its own pentatonic note when inscribed; self-growth sounds a low detuned interval. Click to silence everything, the spoken voice included."
+                        : "Sound is OFF (the default). Click to hear the codex — a chime per dimension, and the voice if you enable it.")
                 Button {
                     voiceOn.toggle()
                     ChimeEngine.shared.voiceEnabled = voiceOn
@@ -544,10 +555,10 @@ struct SigilPageView: View {
                 .help("\(r.glyph) \(r.rawValue): \(r.explanation). \(on ? "On — click to set this dimension aside; the codex will stop drawing such connections." : "Set aside — click to let the codex use it again.")")
             }
             Spacer()
-            Text("touch a word to open its circle · drag to wander the page")
+            Text("touch a word to open its circle · drag to wander · scroll/pinch to zoom")
                 .font(.system(.caption2, design: .serif).italic())
                 .foregroundStyle(ink.opacity(0.45))
-                .help("Click any word to open its circle and inscribe its connections. Drag anywhere to wander across the page. Words in red ochre were written by the codex itself. Hover over a word to learn why it is connected.")
+                .help("Click any word to open its circle and inscribe its connections. Drag anywhere to wander across the page; pinch or two-finger scroll to lean closer or further. Words in red ochre were written by the codex itself. Hover over a word to learn why it is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(parchment.opacity(0.92), in: Capsule())
@@ -596,7 +607,7 @@ struct SigilPageView: View {
 
     private var page: some View {
         GeometryReader { geo in
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
                 Canvas { ctx, size in
                     drawPage(ctx, size: size, now: timeline.date)
                 }
@@ -606,10 +617,11 @@ struct SigilPageView: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let p):
-                    model.hovered = model.nearestWord(to: world(p), within: 34)
+                    model.hovered = model.nearestWord(to: world(p), within: 34 / model.zoom)
                 case .ended: model.hovered = nil
                 }
             }
+            .overlay(ZoomCatcher(onZoom: applyZoom))
         }
         .background(parchment)
         .ignoresSafeArea(edges: .bottom)
@@ -621,12 +633,27 @@ struct SigilPageView: View {
 
     private func screen(_ p: CGPoint, in size: CGSize) -> CGPoint {
         let o = origin(in: size)
-        return CGPoint(x: o.x + p.x, y: o.y + p.y)
+        return CGPoint(x: o.x + p.x * model.zoom, y: o.y + p.y * model.zoom)
     }
 
     private func world(_ p: CGPoint) -> CGPoint {
         let o = origin(in: canvasSize)
-        return CGPoint(x: p.x - o.x, y: p.y - o.y)
+        return CGPoint(x: (p.x - o.x) / model.zoom, y: (p.y - o.y) / model.zoom)
+    }
+
+    /// Zoom about the cursor: the inscription under the pointer stays put.
+    private func applyZoom(_ factor: CGFloat, at p: CGPoint) {
+        let old = model.zoom
+        let new = min(4, max(0.25, old * factor))
+        guard new != old else { return }
+        let o = origin(in: canvasSize)
+        let worldP = CGPoint(x: (p.x - o.x) / old, y: (p.y - o.y) / old)
+        model.zoom = new
+        model.camera.x = p.x - canvasSize.width / 2 - worldP.x * new
+        model.camera.y = p.y - canvasSize.height / 2 - worldP.y * new
+        model.lastInteraction = Date()
+        model.cameraTarget = nil
+        model.saveSoon()
     }
 
     /// Slow hand-tremor: everything on the page breathes a little.
@@ -647,7 +674,18 @@ struct SigilPageView: View {
             }
         }
         drawParchment(ctx, size: size)
-        drawVitruvian(ctx, size: size)
+
+        // Everything inscribed lives in world coordinates; one transformed
+        // context applies pan + zoom to ink, script, and glyphs alike.
+        let o = origin(in: size)
+        let z = model.zoom
+        var w = ctx
+        w.translateBy(x: o.x, y: o.y)
+        w.scaleBy(x: z, y: z)
+        let viewport = CGRect(x: -o.x / z, y: -o.y / z,
+                              width: size.width / z, height: size.height / z)
+
+        drawVitruvian(w)
 
         guard !model.words.isEmpty else {
             ctx.draw(
@@ -664,10 +702,10 @@ struct SigilPageView: View {
 
         // Circles and spokes first, then the script on top.
         for entry in model.words where entry.expanded && entry.circleCenter != nil {
-            drawCircle(ctx, entry: entry, size: size, t: t)
+            drawCircle(w, entry: entry, viewport: viewport, t: t)
         }
         for entry in model.words {
-            drawWord(ctx, entry: entry, size: size, now: now, t: t)
+            drawWord(w, entry: entry, viewport: viewport, now: now, t: t)
         }
         drawHoverCard(ctx, size: size)
     }
@@ -694,9 +732,9 @@ struct SigilPageView: View {
     }
 
     /// The construction behind everything: circle, square, diagonals — faint,
-    /// as if the page began as a study of proportion.
-    private func drawVitruvian(_ ctx: GraphicsContext, size: CGSize) {
-        let c = screen(.zero, in: size)
+    /// as if the page began as a study of proportion. Drawn in world space.
+    private func drawVitruvian(_ ctx: GraphicsContext) {
+        let c = CGPoint.zero
         let R: CGFloat = 275
         let faint = ink.opacity(0.07)
         ctx.stroke(Path(ellipseIn: CGRect(x: c.x - R, y: c.y - R, width: R * 2, height: R * 2)),
@@ -728,11 +766,11 @@ struct SigilPageView: View {
     }
 
     private func drawCircle(_ ctx: GraphicsContext, entry: SigilModel.SWord,
-                            size: CGSize, t: TimeInterval) {
+                            viewport: CGRect, t: TimeInterval) {
         guard let centerW = entry.circleCenter else { return }
-        let c = screen(drift(centerW, seed: entry.id.hashValue, t: t), in: size)
+        let c = drift(centerW, seed: entry.id.hashValue, t: t)
         let r = entry.circleRadius
-        guard c.x > -r, c.x < size.width + r, c.y > -r, c.y < size.height + r else { return }
+        guard viewport.insetBy(dx: -r, dy: -r).contains(c) else { return }
         // Fresh circles are wet ink; old ones pale into the parchment.
         let circleAge = entry.expandedAt.map { Date().timeIntervalSince($0) } ?? 0
         let aged = 1 - 0.5 * min(circleAge / 150, 1)
@@ -755,7 +793,7 @@ struct SigilPageView: View {
             guard abs(d - r) < 2 else { continue }
             var spoke = Path()
             spoke.move(to: c)
-            spoke.addLine(to: screen(drift(member.pos, seed: member.id.hashValue, t: t), in: size))
+            spoke.addLine(to: drift(member.pos, seed: member.id.hashValue, t: t))
             ctx.stroke(spoke, with: .color(ink.opacity(0.14 * aged + 0.03)), lineWidth: 0.7)
         }
         // Mirror-written margin note, the way the master kept his own counsel.
@@ -774,9 +812,9 @@ struct SigilPageView: View {
     }
 
     private func drawWord(_ ctx: GraphicsContext, entry: SigilModel.SWord,
-                          size: CGSize, now: Date, t: TimeInterval) {
-        let p = screen(drift(entry.pos, seed: entry.id.hashValue, t: t), in: size)
-        guard p.x > -80, p.x < size.width + 80, p.y > -40, p.y < size.height + 40 else { return }
+                          viewport: CGRect, now: Date, t: TimeInterval) {
+        let p = drift(entry.pos, seed: entry.id.hashValue, t: t)
+        guard viewport.insetBy(dx: -80, dy: -40).contains(p) else { return }
         let grown = 1 - pow(1 - min(now.timeIntervalSince(entry.born) / 0.5, 1), 3)
         let isCurrent = entry.id == model.current
         let isHovered = entry.id == model.hovered

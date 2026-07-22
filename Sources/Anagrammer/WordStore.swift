@@ -6,11 +6,13 @@ import AnagramEngine
 enum DictionaryChoice: String, CaseIterable, Identifiable {
     case scrabble = "Scrabble (ENABLE)"
     case system = "System (large)"
+    case biblical = "Biblical (KJV)"
     var id: String { rawValue }
     var subtitle: String {
         switch self {
         case .scrabble: return "172k tournament words — clean, no archaic cruft"
         case .system: return "236k words incl. proper/archaic forms"
+        case .biblical: return "curated KJV lexicon — names, places, and King James vocabulary"
         }
     }
 }
@@ -124,6 +126,11 @@ final class WordStore: ObservableObject {
                 return list
             }
             // Fall back to the system dict if the bundled list is missing.
+            return (try? WordList.systemDefault()) ?? WordList(words: [])
+        case .biblical:
+            if let url = resourceURL("biblical", "txt"), let list = try? WordList.load(from: url) {
+                return list
+            }
             return (try? WordList.systemDefault()) ?? WordList(words: [])
         }
     }
