@@ -9,7 +9,8 @@ EXEC_NAME="Anagrammer"        # SPM product (binary) name
 BUNDLE_ID="org.abstreet.wordplay"
 VERSION="6.5.0"
 BUILD_DIR=".build/release"
-APP="dist/${APP_NAME}.app"
+# Every version gets its own bundle, side by side; nothing is overwritten.
+APP="dist/${APP_NAME}-${VERSION}.app"
 CONTENTS="${APP}/Contents"
 
 echo "==> Building release binary…"
@@ -59,5 +60,10 @@ PLIST
 echo "==> Code signing (ad-hoc)…"
 codesign --force --deep --sign - "${APP}"
 
+# Unversioned name stays as a convenience alias for the latest build.
+rm -rf "dist/${APP_NAME}.app"
+ln -s "${APP_NAME}-${VERSION}.app" "dist/${APP_NAME}.app"
+
 echo "==> Done: ${APP}"
+echo "    (dist/${APP_NAME}.app -> latest)"
 echo "    Launch with:  open \"${APP}\""
