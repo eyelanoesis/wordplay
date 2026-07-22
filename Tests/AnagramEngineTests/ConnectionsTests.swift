@@ -62,3 +62,20 @@ private func makeWeb() -> ConnectionWeb {
         #expect(nodes.filter { $0.relation == relation }.count <= 1)
     }
 }
+
+@Test func webRespectsRelationFilter() {
+    let web = makeWeb()
+    // Only one-letter steps allowed: nothing else may appear.
+    let only = web.connections(of: "brain", relations: [.oneLetter])
+    #expect(!only.isEmpty)
+    #expect(only.allSatisfy { $0.relation == .oneLetter })
+    // Empty filter: nothing at all.
+    #expect(web.connections(of: "brain", relations: []).isEmpty)
+    // A word claimed by a disabled first relation falls to the next enabled one:
+    // "rain" is normally .oneLetter; with letters off it surfaces phonetically.
+    let noLetters = web.connections(of: "brain",
+                                    relations: [.rhyme, .fusion, .hidden, .audible])
+    if let rain = noLetters.first(where: { $0.word == "rain" }) {
+        #expect(rain.relation != .oneLetter)
+    }
+}

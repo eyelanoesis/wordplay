@@ -50,7 +50,10 @@ public struct ConnectionWeb: Sendable {
     }
 
     /// Up to `perRelation` neighbors of `word` for every relation type.
-    public func connections(of word: String, perRelation: Int = 5) -> [Node] {
+    /// `relations` restricts which dimensions are searched at all — a disabled
+    /// relation costs nothing and contributes nothing.
+    public func connections(of word: String, perRelation: Int = 5,
+                            relations: Set<Relation> = Set(Relation.allCases)) -> [Node] {
         let w = word.lowercased()
         var nodes: [Node] = []
 
@@ -66,31 +69,45 @@ public struct ConnectionWeb: Sendable {
             }
         }
 
-        add(cryptic.anagramWords(of: w).filter { $0 != w },
-            .anagram) { "\($0): the letters of \(w), rearranged" }
+        if relations.contains(.anagram) {
+            add(cryptic.anagramWords(of: w).filter { $0 != w },
+                .anagram) { "\($0): the letters of \(w), rearranged" }
+        }
 
-        let steps = (ladder.changeOneLetter(w) + ladder.dropOneLetter(w) + ladder.addOneLetter(w))
-        add(steps.sorted { ($0.count, $0) < ($1.count, $1) },
-            .oneLetter) { "\($0): one letter away from \(w)" }
+        if relations.contains(.oneLetter) {
+            let steps = (ladder.changeOneLetter(w) + ladder.dropOneLetter(w) + ladder.addOneLetter(w))
+            add(steps.sorted { ($0.count, $0) < ($1.count, $1) },
+                .oneLetter) { "\($0): one letter away from \(w)" }
+        }
 
         if let phonetics {
-            add(phonetics.homophones(w), .homophone) { "\($0): pronounced exactly like \(w)" }
-            add(phonetics.rhymes(w).sorted { ($0.count, $0) < ($1.count, $1) },
-                .rhyme) { "\($0): rhymes with \(w)" }
+            if relations.contains(.homophone) {
+                add(phonetics.homophones(w), .homophone) { "\($0): pronounced exactly like \(w)" }
+            }
+            if relations.contains(.rhyme) {
+                add(phonetics.rhymes(w).sorted { ($0.count, $0) < ($1.count, $1) },
+                    .rhyme) { "\($0): rhymes with \(w)" }
+            }
         }
 
         if let fusion {
-            let fusions = fusion.fusions(of: w, minOverlap: 2, cap: perRelation * 2)
-            var details: [String: String] = [:]
-            for f in fusions where details[f.partner] == nil {
-                details[f.partner] = "\(f.partner) ⋈ \(w) → “\(f.spelling)”"
+            if relations.contains(.fusion) {
+                let fusions = fusion.fusions(of: w, minOverlap: 2, cap: perRelation * 2)
+                var details: [String: String] = [:]
+                for f in fusions where details[f.partner] == nil {
+                    details[f.partner] = "\(f.partner) ⋈ \(w) → “\(f.spelling)”"
+                }
+                add(fusions.map(\.partner), .fusion) { details[$0] ?? "sound-overlaps \(w)" }
             }
-            add(fusions.map(\.partner), .fusion) { details[$0] ?? "sound-overlaps \(w)" }
-            add(fusion.audibleWords(in: w), .audible) { "you can hear \($0) inside \(w)" }
+            if relations.contains(.audible) {
+                add(fusion.audibleWords(in: w), .audible) { "you can hear \($0) inside \(w)" }
+            }
         }
 
-        add(cryptic.hiddenWords(in: w, minLength: 3).map(\.word).filter { $0 != w },
-            .hidden) { "\($0) is spelled inside \(w)" }
+        if relations.contains(.hidden) {
+            add(cryptic.hiddenWords(in: w, minLength: 3).map(\.word).filter { $0 != w },
+                .hidden) { "\($0) is spelled inside \(w)" }
+        }
 
         return nodes
     }

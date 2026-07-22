@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 APP_NAME="Wordplay"          # bundle / display name
 EXEC_NAME="Anagrammer"        # SPM product (binary) name
 BUNDLE_ID="org.abstreet.wordplay"
-VERSION="6.4.0"
+VERSION="6.5.0"
 BUILD_DIR=".build/release"
 APP="dist/${APP_NAME}.app"
 CONTENTS="${APP}/Contents"

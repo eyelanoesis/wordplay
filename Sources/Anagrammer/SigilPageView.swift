@@ -240,7 +240,9 @@ struct SigilPageView: View {
 
     @State private var word = ""
     @State private var toWord = ""
-    @State private var muted = false
+    @AppStorage("webMuted") private var muted = false
+    @AppStorage("webRelationsOn") private var relationsOnRaw = WebDimensions.allRaw
+    @AppStorage("webSpreadSeconds") private var spreadSeconds = 3.0
     @State private var voiceOn = false
     @State private var showLog = true
     @State private var panning = false
@@ -250,6 +252,18 @@ struct SigilPageView: View {
     private let parchment = Color(red: 0.91, green: 0.86, blue: 0.74)
     private let ink = Color(red: 0.32, green: 0.22, blue: 0.12)       // sepia
     private let ochre = Color(red: 0.62, green: 0.18, blue: 0.10)     // red ochre
+
+    private var relationsOn: Set<ConnectionWeb.Relation> { WebDimensions.parse(relationsOnRaw) }
+
+    private func relationBinding(_ r: ConnectionWeb.Relation) -> Binding<Bool> {
+        Binding(
+            get: { WebDimensions.parse(relationsOnRaw).contains(r) },
+            set: { on in
+                var s = WebDimensions.parse(relationsOnRaw)
+                if on { s.insert(r) } else { s.remove(r) }
+                relationsOnRaw = WebDimensions.encode(s)
+            })
+    }
 
     var body: some View {
         ZStack {
@@ -267,6 +281,7 @@ struct SigilPageView: View {
         .environment(\.colorScheme, .light)
         .onAppear {
             store.loadPhonetics()
+            ChimeEngine.shared.muted = muted
             if model.words.isEmpty {
                 let restored = model.restore()
                 if restored > 0 {
@@ -293,7 +308,7 @@ struct SigilPageView: View {
             }
             guard model.autoSpread, !model.isBusy, !model.isFull, store.isReady,
                   !model.words.isEmpty,
-                  now.timeIntervalSince(model.lastSpread) > 3.2 else { continue }
+                  now.timeIntervalSince(model.lastSpread) >= max(1, spreadSeconds) else { continue }
             // Mostly open new circles; sometimes return to an old one and
             // deepen it with connections missed the first time.
             let unopened = model.words.filter { !$0.expanded && $0.dying == nil }
@@ -313,12 +328,13 @@ struct SigilPageView: View {
     private func expand(_ target: String, auto: Bool = false) {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
         model.isBusy = true
+        let relations = relationsOn
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
             let found = await Task.detached(priority: auto ? .utility : .userInitiated) {
                 ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics, fusion: fusion)
-                    .connections(of: target, perRelation: auto ? 2 : 4)
+                    .connections(of: target, perRelation: auto ? 2 : 4, relations: relations)
             }.value
             let placed = model.inscribe(from: target, with: found, viral: auto, now: Date())
             if auto, placed > 0, let c = model.entry(for: target)?.circleCenter {
@@ -412,36 +428,70 @@ struct SigilPageView: View {
                     .font(.system(.body, design: .serif))
                     .frame(maxWidth: 150)
                     .onSubmit { go() }
+                    .help("The word to set at the center of a fresh page. The codex will study it and inscribe its connections around it. Press ⏎ to begin.")
                 Image(systemName: "arrow.right").font(.caption).foregroundStyle(.tertiary)
                 TextField("…the way to (optional)", text: $toWord)
                     .textFieldStyle(.plain)
                     .font(.system(.body, design: .serif))
                     .frame(maxWidth: 150)
                     .onSubmit { go() }
+                    .help("Optional destination. With both fields filled, the codex divines a six-degrees chain from the first word to this one and inscribes it step by step. The divination always searches all seven dimensions, even ones you have set aside.")
                 Button(toWordTrimmed.isEmpty ? "Inscribe" : "Divine the way") { go() }
                     .buttonStyle(.borderedProminent).tint(ink)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!store.isReady || model.isBusy)
+                    .help(toWordTrimmed.isEmpty
+                        ? "Begin a new page from this word (⌘⏎)."
+                        : "Find and inscribe the chain between the two words (⌘⏎).")
                 if model.isBusy || store.phoneticsLoading { ProgressView().controlSize(.small) }
                 Divider().frame(height: 16)
                 Text(model.isFull
                      ? "the page is full — clear to turn a new leaf"
                      : "\(model.words.count) inscriptions")
                     .font(.system(.caption, design: .serif)).foregroundStyle(.secondary)
+                    .help("How many words are inscribed. The page holds \(model.maxWords) at most; near capacity the oldest unopened ink fades so the codex can keep writing.")
                 Button("Clear") { model.clear() }
                     .controlSize(.small)
                     .disabled(model.words.isEmpty)
+                    .help("Wipe the page and the codex's memory of it. This also clears what was saved between launches.")
+                Menu {
+                    ForEach(ConnectionWeb.Relation.allCases) { r in
+                        Toggle(isOn: relationBinding(r)) { Text("\(r.glyph)  \(r.rawValue)") }
+                    }
+                    Divider()
+                    Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
+                } label: { Image(systemName: "slider.horizontal.3") }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Which of the seven dimensions may forge new connections (\(relationsOn.count) of 7 on). A dimension set aside is skipped entirely when a circle opens; ink already on the page remains. The legend below toggles the same switches.")
+                Menu {
+                    Picker("cadence", selection: $spreadSeconds) {
+                        ForEach(WebDimensions.cadences, id: \.self) { s in
+                            Text(WebDimensions.cadenceLabel(s)).tag(s)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: { Image(systemName: "timer") }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("How often the codex writes on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to the self-writing; opening a circle by hand is immediate.")
                 Button { model.autoSpread.toggle() } label: {
-                    Image(systemName: model.autoSpread ? "sparkles" : "sparkle")
+                    Image(systemName: model.autoSpread ? "pause.fill" : "play.fill")
                 }
                     .controlSize(.small)
-                    .tint(model.autoSpread ? ochre : nil)
-                    .help(model.autoSpread ? "the codex writes itself — click to still the pen" : "let the pen move")
+                    .tint(model.autoSpread ? nil : ochre)
+                    .help(model.autoSpread
+                        ? "The codex is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it opens a new circle or returns to deepen an old one (marked ✦ in the log, red ochre ink on the page). Click to still the pen — you can still open circles by clicking words."
+                        : "The pen is stilled. Click to let the codex write itself again.")
                 Button {
                     muted.toggle()
                     ChimeEngine.shared.muted = muted
                 } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }
                     .controlSize(.small)
+                    .help(muted
+                        ? "Sound is muted. Click to hear the codex again."
+                        : "Mute all sound — each dimension rings its own pentatonic note when inscribed, self-growth sounds a low detuned interval, and the spoken voice falls silent too.")
                 Button {
                     voiceOn.toggle()
                     ChimeEngine.shared.voiceEnabled = voiceOn
@@ -449,14 +499,18 @@ struct SigilPageView: View {
                 } label: { Image(systemName: voiceOn ? "quote.bubble.fill" : "quote.bubble") }
                     .controlSize(.small)
                     .tint(voiceOn ? ink : nil)
-                    .help(voiceOn ? "the codex speaks its words — silence it" : "let the codex speak")
+                    .help(voiceOn
+                        ? "The codex speaks each word aloud as its circle opens. Click to silence the voice (chimes keep playing unless muted)."
+                        : "Let the codex speak each word aloud as its circle opens.")
                 Button { exportPNG() } label: { Image(systemName: "camera") }
                     .controlSize(.small)
                     .disabled(model.words.isEmpty)
+                    .help("Export the visible page as a retina PNG.")
                 Button { showLog.toggle() } label: {
                     Image(systemName: showLog ? "book.closed.fill" : "book.closed")
                 }
                     .controlSize(.small)
+                    .help("Show or hide the codex's own log — a timestamped record of every inscription, deepening, and fading.")
                 Spacer()
             }
             if let status = model.status {
@@ -475,18 +529,25 @@ struct SigilPageView: View {
     private var legend: some View {
         HStack(spacing: 13) {
             ForEach(ConnectionWeb.Relation.allCases) { r in
-                HStack(spacing: 4) {
-                    Text(r.glyph).font(.system(size: 12))
-                        .foregroundStyle(r.color.opacity(0.85))
-                    Text(r.rawValue)
-                        .font(.system(.caption2, design: .serif))
-                        .foregroundStyle(ink.opacity(0.6))
+                let on = relationsOn.contains(r)
+                Button { relationBinding(r).wrappedValue = !on } label: {
+                    HStack(spacing: 4) {
+                        Text(r.glyph).font(.system(size: 12))
+                            .foregroundStyle(r.color.opacity(on ? 0.85 : 0.25))
+                        Text(r.rawValue)
+                            .font(.system(.caption2, design: .serif))
+                            .foregroundStyle(ink.opacity(on ? 0.6 : 0.3))
+                            .strikethrough(!on, color: ink.opacity(0.4))
+                    }
                 }
+                .buttonStyle(.plain)
+                .help("\(r.glyph) \(r.rawValue): \(r.explanation). \(on ? "On — click to set this dimension aside; the codex will stop drawing such connections." : "Set aside — click to let the codex use it again.")")
             }
             Spacer()
             Text("touch a word to open its circle · drag to wander the page")
                 .font(.system(.caption2, design: .serif).italic())
                 .foregroundStyle(ink.opacity(0.45))
+                .help("Click any word to open its circle and inscribe its connections. Drag anywhere to wander across the page. Words in red ochre were written by the codex itself. Hover over a word to learn why it is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(parchment.opacity(0.92), in: Capsule())
@@ -764,14 +825,20 @@ struct SigilPageView: View {
         guard let id = model.hovered, !panning,
               let entry = model.entry(for: id), !entry.detail.isEmpty else { return }
         var caption = entry.detail
+        if let relation = entry.relation {
+            caption = "\(relation.glyph) \(relation.rawValue) — \(relation.explanation)\n" + caption
+        }
         if let phones = store.phonetics?.pronunciations(of: id).first {
             caption += "\n/\(phones.joined(separator: " "))/"
         }
+        caption += entry.viral
+            ? "\ninscribed by the codex itself · click to open its circle"
+            : "\nclick to open its circle"
         let text = Text(caption)
             .font(.system(.caption, design: .serif))
             .foregroundStyle(ink.opacity(0.9))
         let resolved = ctx.resolve(text)
-        let measured = resolved.measure(in: CGSize(width: 360, height: 80))
+        let measured = resolved.measure(in: CGSize(width: 420, height: 120))
         let anchor = screen(entry.pos, in: size)
         var cardOrigin = CGPoint(x: anchor.x - measured.width / 2,
                                  y: anchor.y - measured.height - 24)

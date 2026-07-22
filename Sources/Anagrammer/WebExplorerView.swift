@@ -28,6 +28,49 @@ extension ConnectionWeb.Relation {
         case .audible: return "audible substring"
         }
     }
+
+    /// A full sentence for tooltips: what this dimension actually means.
+    var explanation: String {
+        switch self {
+        case .anagram:
+            return "both words use exactly the same letters, rearranged (silent / listen)"
+        case .oneLetter:
+            return "changing, adding, or dropping one letter turns one word into the other (word → ward)"
+        case .homophone:
+            return "spelled differently but pronounced exactly the same (pair / pear)"
+        case .rhyme:
+            return "the words share their final sounds, from the last stressed vowel on (moon / June)"
+        case .fusion:
+            return "the words overlap by sound and fuse into one audible pseudo-word (brain ⋈ angel → brangel)"
+        case .hidden:
+            return "one word is spelled, letter for letter, inside the other (ear inside heart)"
+        case .audible:
+            return "one word can be heard inside the other's pronunciation, whatever the spelling (cane inside hurricane)"
+        }
+    }
+}
+
+// MARK: - Shared Web-tab settings
+
+/// The seven dimensions as a persisted on/off set, plus the auto-write cadence.
+/// Both pages (codex and crossword) read the same @AppStorage keys, so the
+/// choices carry across the toggle and across launches.
+enum WebDimensions {
+    static let allRaw = ConnectionWeb.Relation.allCases.map(\.rawValue).joined(separator: ",")
+
+    static func parse(_ raw: String) -> Set<ConnectionWeb.Relation> {
+        Set(raw.split(separator: ",").compactMap { ConnectionWeb.Relation(rawValue: String($0)) })
+    }
+
+    static func encode(_ set: Set<ConnectionWeb.Relation>) -> String {
+        ConnectionWeb.Relation.allCases.filter(set.contains).map(\.rawValue).joined(separator: ",")
+    }
+
+    static let cadences: [Double] = [1, 2, 3, 5, 10, 30]
+
+    static func cadenceLabel(_ s: Double) -> String {
+        s == 1 ? "every second" : "every \(Int(s)) seconds"
+    }
 }
 
 struct Cell: Hashable {
@@ -225,7 +268,9 @@ struct CrosswordPageView: View {
 
     @State private var word = ""
     @State private var toWord = ""
-    @State private var muted = false
+    @AppStorage("webMuted") private var muted = false
+    @AppStorage("webRelationsOn") private var relationsOnRaw = WebDimensions.allRaw
+    @AppStorage("webSpreadSeconds") private var spreadSeconds = 3.0
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -235,6 +280,18 @@ struct CrosswordPageView: View {
 
     private let paper = Color(red: 0.965, green: 0.955, blue: 0.93)
     private let inkDark = Color(red: 0.13, green: 0.12, blue: 0.11)
+
+    private var relationsOn: Set<ConnectionWeb.Relation> { WebDimensions.parse(relationsOnRaw) }
+
+    private func relationBinding(_ r: ConnectionWeb.Relation) -> Binding<Bool> {
+        Binding(
+            get: { WebDimensions.parse(relationsOnRaw).contains(r) },
+            set: { on in
+                var s = WebDimensions.parse(relationsOnRaw)
+                if on { s.insert(r) } else { s.remove(r) }
+                relationsOnRaw = WebDimensions.encode(s)
+            })
+    }
 
     var body: some View {
         ZStack {
@@ -250,7 +307,10 @@ struct CrosswordPageView: View {
             if showLog { logPanel.padding(.vertical, 76).padding(.trailing, 12) }
         }
         .environment(\.colorScheme, .light)
-        .onAppear { store.loadPhonetics() }
+        .onAppear {
+            store.loadPhonetics()
+            ChimeEngine.shared.muted = muted
+        }
         .task { await spreadLoop() }
     }
 
@@ -258,10 +318,10 @@ struct CrosswordPageView: View {
 
     private func spreadLoop() async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .milliseconds(500))
             guard model.autoSpread, !model.isBusy, !model.isFull, store.isReady,
                   !model.placed.isEmpty,
-                  Date().timeIntervalSince(model.lastSpread) > 2.8,
+                  Date().timeIntervalSince(model.lastSpread) >= max(1, spreadSeconds),
                   let host = model.placed.filter({ !$0.expanded }).randomElement()
             else { continue }
             model.lastSpread = Date()
@@ -272,12 +332,13 @@ struct CrosswordPageView: View {
     private func expand(_ target: String, auto: Bool = false) {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
         model.isBusy = true
+        let relations = relationsOn
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
             let found = await Task.detached(priority: auto ? .utility : .userInitiated) {
                 ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics, fusion: fusion)
-                    .connections(of: target, perRelation: auto ? 3 : 6)
+                    .connections(of: target, perRelation: auto ? 3 : 6, relations: relations)
             }.value
             var woven = 0
             for connection in found {
@@ -382,43 +443,79 @@ struct CrosswordPageView: View {
                     .font(.system(.body, design: .monospaced))
                     .frame(maxWidth: 150)
                     .onSubmit { go() }
+                    .help("The seed word: it is laid across the grid and its connections are woven around it. Press ⏎ to start.")
                 Image(systemName: "arrow.right").font(.caption).foregroundStyle(.tertiary)
                 TextField("…cross to (optional)", text: $toWord)
                     .textFieldStyle(.plain)
                     .font(.system(.body, design: .monospaced))
                     .frame(maxWidth: 140)
                     .onSubmit { go() }
+                    .help("Optional destination. With both fields filled, the app finds a six-degrees chain from the first word to this one and weaves it step by step. Path-finding always searches all seven dimensions, even ones you have switched off.")
                 Button(toWordTrimmed.isEmpty ? "Lay it down" : "Weave path") { go() }
                     .buttonStyle(.borderedProminent).tint(inkDark)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!store.isReady || model.isBusy)
+                    .help(toWordTrimmed.isEmpty
+                        ? "Start a new puzzle from the seed word (⌘⏎)."
+                        : "Find and weave the chain between the two words (⌘⏎).")
                 if model.isBusy || store.phoneticsLoading { ProgressView().controlSize(.small) }
                 Divider().frame(height: 16)
                 Text(model.isFull
                      ? "page full — clear to begin again"
                      : "\(model.placed.count) words woven")
                     .font(.caption).foregroundStyle(.secondary)
+                    .help("How many words are on the grid. The page holds \(model.maxWords) at most.")
                 Button("Clear") { model.clear() }
                     .controlSize(.small)
                     .disabled(model.placed.isEmpty)
+                    .help("Wipe the grid and start over. Nothing is saved.")
+                Menu {
+                    ForEach(ConnectionWeb.Relation.allCases) { r in
+                        Toggle(isOn: relationBinding(r)) { Text("\(r.glyph)  \(r.rawValue)") }
+                    }
+                    Divider()
+                    Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
+                } label: { Image(systemName: "slider.horizontal.3") }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("Which of the seven dimensions may weave new words (\(relationsOn.count) of 7 on). Unchecked dimensions are skipped entirely when a word grows; what is already on the grid stays. The legend below toggles the same switches.")
+                Menu {
+                    Picker("cadence", selection: $spreadSeconds) {
+                        ForEach(WebDimensions.cadences, id: \.self) { s in
+                            Text(WebDimensions.cadenceLabel(s)).tag(s)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: { Image(systemName: "timer") }
+                    .controlSize(.small)
+                    .fixedSize()
+                    .help("How often the puzzle grows on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to automatic growth; clicking a word grows it immediately.")
                 Button { model.autoSpread.toggle() } label: {
-                    Image(systemName: model.autoSpread ? "allergens.fill" : "allergens")
+                    Image(systemName: model.autoSpread ? "pause.fill" : "play.fill")
                 }
                     .controlSize(.small)
-                    .tint(model.autoSpread ? Color(red: 0.85, green: 0.25, blue: 0.25) : nil)
-                    .help(model.autoSpread ? "the puzzle is writing itself — click to pause" : "let it write itself")
+                    .tint(model.autoSpread ? nil : Color(red: 0.85, green: 0.25, blue: 0.25))
+                    .help(model.autoSpread
+                        ? "The puzzle is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it picks an unexpanded word and weaves its connections (shown in red). Click to pause — you can still grow words by clicking them."
+                        : "Automatic growth is paused. Click to let the puzzle write itself again.")
                 Button {
                     muted.toggle()
                     ChimeEngine.shared.muted = muted
                 } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }
                     .controlSize(.small)
+                    .help(muted
+                        ? "Sound is muted. Click to hear the dimension chimes again."
+                        : "Mute all sound — each dimension plays its own pentatonic note when a word is woven; self-growth plays a low detuned interval.")
                 Button { exportPNG() } label: { Image(systemName: "camera") }
                     .controlSize(.small)
                     .disabled(model.placed.isEmpty)
+                    .help("Export the visible page as a retina PNG.")
                 Button { showLog.toggle() } label: {
                     Image(systemName: showLog ? "text.append" : "text.justify.left")
                 }
                     .controlSize(.small)
+                    .help("Show or hide the weave log — a timestamped record of every word woven and every failed attempt.")
                 Spacer()
             }
             if let status = model.status {
@@ -436,16 +533,23 @@ struct CrosswordPageView: View {
     private var legend: some View {
         HStack(spacing: 12) {
             ForEach(ConnectionWeb.Relation.allCases) { r in
-                HStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 2).fill(r.color.opacity(0.55))
-                        .frame(width: 10, height: 10)
-                    Text(r.rawValue).font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                let on = relationsOn.contains(r)
+                Button { relationBinding(r).wrappedValue = !on } label: {
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(r.color.opacity(on ? 0.55 : 0.15))
+                            .frame(width: 10, height: 10)
+                        Text(r.rawValue).font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(on ? .secondary : .tertiary)
+                            .strikethrough(!on, color: .secondary)
+                    }
                 }
+                .buttonStyle(.plain)
+                .help("\(r.rawValue): \(r.explanation). \(on ? "On — click to stop this dimension from weaving new words." : "Off — click to allow it again.")")
             }
             Spacer()
             Text("click a word to grow it · drag to pan · red words grew on their own")
                 .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
+                .help("Click any word on the grid to weave its connections around it. Drag anywhere to pan the endless page. Words written in red ink were added by the puzzle itself, not by you. Hover over a word to see why it is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(paper.opacity(0.9), in: Capsule())
@@ -602,13 +706,19 @@ struct CrosswordPageView: View {
         guard let id = model.hovered, !panning,
               let entry = model.entry(for: id), !entry.detail.isEmpty else { return }
         var caption = entry.detail
+        if let relation = entry.relation {
+            caption = "\(relation.rawValue) — \(relation.explanation)\n" + caption
+        }
         if let phones = store.phonetics?.pronunciations(of: id).first {
             caption += "\n/\(phones.joined(separator: " "))/"
         }
+        caption += entry.viral
+            ? "\nwoven by the puzzle itself · click to grow it"
+            : "\nclick to grow its connections"
         let text = Text(caption).font(.system(.caption, design: .monospaced))
             .foregroundStyle(inkDark.opacity(0.9))
         let resolved = ctx.resolve(text)
-        let measured = resolved.measure(in: CGSize(width: 360, height: 80))
+        let measured = resolved.measure(in: CGSize(width: 420, height: 120))
         let anchor = rect(of: entry.cell(0), in: size)
         var cardOrigin = CGPoint(x: anchor.minX, y: anchor.minY - measured.height - 16)
         cardOrigin.x = min(max(cardOrigin.x, 8), size.width - measured.width - 8)
