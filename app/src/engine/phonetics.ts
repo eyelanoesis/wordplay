@@ -52,6 +52,33 @@ export class PhoneticDictionary {
     }
   }
 
+  /**
+   * Fast path for the baked lexicon format (`word|PHONES|RHYMEKEY`, one line
+   * per word, phones already stress-stripped, rhyme key precomputed — see
+   * scripts/build-lexicon.mjs). Skips the cmudict parse entirely.
+   */
+  static fromLexicon(text: string): PhoneticDictionary {
+    const dict = new PhoneticDictionary("");
+    for (const line of text.split("\n")) {
+      if (line.length === 0) continue;
+      const [word, ph, rk] = line.split("|");
+      if (!word || !ph) continue;
+      const phones = ph.split(" ");
+      let list = dict.prons.get(word);
+      if (!list) dict.prons.set(word, (list = []));
+      list.push(phones);
+      if (rk) {
+        let bucket = dict.rhymeIndex.get(rk);
+        if (!bucket) dict.rhymeIndex.set(rk, (bucket = new Set()));
+        bucket.add(word);
+      }
+      let hb = dict.homophoneIndex.get(ph);
+      if (!hb) dict.homophoneIndex.set(ph, (hb = new Set()));
+      hb.add(word);
+    }
+    return dict;
+  }
+
   get count(): number {
     return this.prons.size;
   }
@@ -61,13 +88,16 @@ export class PhoneticDictionary {
   }
 
   /**
-   * Syllable count = number of vowel phonemes (those carrying a stress digit).
-   * Returns null if the word isn't in the dictionary.
+   * Syllable count = number of vowel phonemes. Returns null if the word isn't
+   * in the dictionary. (Swift counts stress digits; every ARPABET vowel starts
+   * with A/E/I/O/U and no consonant does, so this test is equivalent on
+   * cmudict input — and, unlike the digit test, also works on the baked
+   * lexicon, whose phones are stress-stripped.)
    */
   syllableCount(word: string): number | null {
     const first = this.prons.get(word.toLowerCase())?.[0];
     if (!first) return null;
-    return first.filter((p) => /\d/.test(p)).length;
+    return first.filter((p) => /^[AEIOU]/.test(p)).length;
   }
 
   /**
