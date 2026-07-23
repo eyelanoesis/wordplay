@@ -51,7 +51,7 @@ Dictionary and ENABLE word list are committed under
 ## Conventions
 
 - **Version every release.** Bump `VERSION` in `package.sh` (single source of
-  truth → Info.plist → shown in the sidebar footer). Current: **6.4.0**.
+  truth → Info.plist → shown in the sidebar footer).
 - **Keep the engine pure.** No SwiftUI or AppKit imports in `AnagramEngine`.
 - **Heavy work off-main.** Dictionary-scale searches run on detached tasks so
   the UI stays responsive; cache prebuilt indexes on `WordStore`.

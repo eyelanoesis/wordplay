@@ -109,6 +109,38 @@
     /* the fold button rotates into an × when the HUD is open */
     body:not(.folded) #fold { transform: rotate(45deg); }
   }
+  .popwrap { position: relative; }
+  .popover {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+    background: rgba(238,227,202,.98); border: 1px solid rgba(82,56,31,.35);
+    border-radius: 10px; padding: 10px 12px; width: 240px;
+    box-shadow: 0 6px 18px rgba(40,25,10,.25); font-size: .82rem;
+    max-height: 70vh; overflow-y: auto;
+  }
+  .popover.hidden { display: none; }
+  .popover label { display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; }
+  .popover .label { font-variant: small-caps; letter-spacing: .04em; color: var(--ink-soft); margin: 2px 0; }
+  .popover .row { display: flex; gap: 6px; margin: 6px 0; }
+  .popover hr { border: none; border-top: 1px solid rgba(82,56,31,.25); margin: 8px 0; }
+  button.mini {
+    padding: 3px 9px; font-size: .72rem; font-variant: small-caps;
+    border: 1px solid var(--ink-soft); border-radius: 6px;
+    background: transparent; color: var(--ink);
+  }
+  select#dict {
+    font: inherit; font-size: .82rem; padding: 6px 8px; border-radius: 7px;
+    border: 1px solid var(--ink-soft); background: rgba(255,255,255,.5); color: var(--ink);
+  }
+  .legendItem {
+    background: none; border: none; padding: 2px 2px; margin: 0; font: inherit;
+    font-size: .75rem; color: var(--ink-soft); cursor: pointer;
+    display: inline-flex; align-items: center;
+  }
+  .lmark { display: inline-block; margin-right: 4px; }
+  .ldot { width: 8px; height: 8px; border-radius: 2px; }
+  @media (max-width: 720px) {
+    .popover { width: calc(100vw - 24px); max-width: 320px; }
+  }
 </style>
 </head>
 <body>
@@ -122,9 +154,18 @@
   <button id="go">Inscribe</button>
   <span id="count"></span>
   <button class="ghost" id="clear">Clear</button>
-  <button class="ghost on" id="spread" title="the codex writes itself">✦ self-writing</button>
-  <button class="ghost" id="chimes" title="each dimension has a note">♪ chimes</button>
-  <button class="ghost" id="voice" title="the codex speaks">❝ voice</button>
+  <select id="dict" title="the active dictionary — anagram, one-letter, hidden, and reversal connections all read from it"></select>
+  <div class="popwrap">
+    <button class="ghost" id="dimsBtn" title="which connections may be drawn, how many, and the glyphs">☰ dims</button>
+    <div class="popover hidden" id="dimsPanel"></div>
+  </div>
+  <div class="popwrap">
+    <button class="ghost" id="cadenceBtn" title="seconds between the codex's own inscriptions while self-writing plays">⏱ cadence</button>
+    <div class="popover hidden" id="cadencePanel"></div>
+  </div>
+  <button class="ghost" id="spread" title="the codex writes itself (off by default)">✦ self-writing</button>
+  <button class="ghost" id="chimes" title="each dimension has a note (off by default)">♪ chimes</button>
+  <button class="ghost" id="voice" title="the codex speaks (off by default)">❝ voice</button>
   <button class="ghost" id="save" title="export the page">⤓ png</button>
   <button class="ghost" id="logtoggle" title="show the codex log">☰ log</button>
   <span id="status"></span>
@@ -223921,35 +223962,1541 @@ zyzzyva
 zyzzyvas</script>
 
 <!-- ══════════════ THE ENGINES (ported from AnagramEngine) ══════════════ -->
+<script id="wordlist-biblical" type="text/plain"># Biblical (KJV) lexicon — curated for Wordplay.
+# Names, places, and King James vocabulary. Lines that are not purely
+# alphabetic (like these comments) are ignored by the loader.
+
+# Books
+genesis
+exodus
+leviticus
+numbers
+deuteronomy
+joshua
+judges
+ruth
+samuel
+kings
+chronicles
+ezra
+nehemiah
+esther
+job
+psalm
+psalms
+proverbs
+ecclesiastes
+isaiah
+jeremiah
+lamentations
+ezekiel
+daniel
+hosea
+joel
+amos
+obadiah
+jonah
+micah
+nahum
+habakkuk
+zephaniah
+haggai
+zechariah
+malachi
+matthew
+mark
+luke
+john
+acts
+romans
+corinthians
+galatians
+ephesians
+philippians
+colossians
+thessalonians
+timothy
+titus
+philemon
+hebrews
+james
+peter
+jude
+revelation
+
+# People
+adam
+eve
+cain
+abel
+seth
+enoch
+methuselah
+lamech
+noah
+shem
+ham
+japheth
+nimrod
+abram
+abraham
+sarai
+sarah
+hagar
+ishmael
+isaac
+rebekah
+esau
+jacob
+israel
+rachel
+leah
+reuben
+simeon
+levi
+judah
+dan
+naphtali
+gad
+asher
+issachar
+zebulun
+joseph
+benjamin
+dinah
+tamar
+perez
+zerah
+lot
+laban
+melchizedek
+keturah
+midian
+pharaoh
+potiphar
+moses
+aaron
+miriam
+jethro
+zipporah
+gershom
+eleazar
+phinehas
+caleb
+balaam
+balak
+korah
+dathan
+abiram
+og
+sihon
+achan
+rahab
+othniel
+ehud
+eglon
+shamgar
+deborah
+barak
+jael
+sisera
+gideon
+abimelech
+jephthah
+samson
+delilah
+eli
+hannah
+elkanah
+ichabod
+saul
+jonathan
+michal
+merab
+abner
+ishbosheth
+david
+goliath
+jesse
+abigail
+nabal
+bathsheba
+uriah
+nathan
+absalom
+amnon
+adonijah
+joab
+abishai
+asahel
+ittai
+shimei
+ziba
+mephibosheth
+ahithophel
+hushai
+zadok
+abiathar
+abishag
+solomon
+rehoboam
+jeroboam
+nadab
+baasha
+omri
+ahab
+jezebel
+elijah
+elisha
+gehazi
+naaman
+jehu
+naboth
+micaiah
+jehoshaphat
+athaliah
+joash
+amaziah
+uzziah
+jotham
+ahaz
+hezekiah
+manasseh
+amon
+josiah
+jehoiakim
+jehoiachin
+zedekiah
+gedaliah
+nebuchadnezzar
+belshazzar
+darius
+cyrus
+artaxerxes
+sanballat
+tobiah
+mordecai
+haman
+vashti
+ahasuerus
+boaz
+naomi
+orpah
+shadrach
+meshach
+abednego
+zerubbabel
+jesus
+christ
+messiah
+immanuel
+emmanuel
+herod
+herodias
+pilate
+caiaphas
+annas
+barabbas
+lazarus
+martha
+mary
+magdalene
+salome
+zacharias
+elisabeth
+gabriel
+michael
+anna
+andrew
+philip
+bartholomew
+thomas
+thaddaeus
+matthias
+judas
+iscariot
+nicodemus
+zacchaeus
+bartimaeus
+barnabas
+stephen
+paul
+silas
+lydia
+aquila
+priscilla
+apollos
+felix
+festus
+agrippa
+demetrius
+eutychus
+onesimus
+dorcas
+tabitha
+cornelius
+ananias
+sapphira
+gamaliel
+theophilus
+tychicus
+epaphras
+demas
+alexander
+hymenaeus
+diotrephes
+gaius
+
+# Places
+eden
+babel
+ararat
+ur
+haran
+canaan
+sodom
+gomorrah
+zoar
+bethel
+hebron
+beersheba
+egypt
+goshen
+sinai
+horeb
+kadesh
+moab
+edom
+ammon
+jericho
+gilgal
+shiloh
+gibeon
+hazor
+bethlehem
+nazareth
+galilee
+capernaum
+bethsaida
+chorazin
+nain
+cana
+samaria
+sychar
+jerusalem
+zion
+moriah
+olivet
+gethsemane
+golgotha
+calvary
+bethany
+bethphage
+emmaus
+joppa
+lydda
+caesarea
+antioch
+damascus
+tarsus
+cyprus
+ephesus
+philippi
+thessalonica
+berea
+athens
+corinth
+rome
+patmos
+laodicea
+sardis
+pergamos
+thyatira
+smyrna
+philadelphia
+nineveh
+babylon
+assyria
+chaldea
+persia
+media
+elam
+shinar
+carmel
+tabor
+hermon
+gilead
+bashan
+jordan
+kidron
+siloam
+bethesda
+shechem
+penuel
+mahanaim
+ziklag
+engedi
+megiddo
+armageddon
+jezreel
+endor
+shunem
+lachish
+gaza
+ashkelon
+ashdod
+ekron
+gath
+philistia
+phoenicia
+tyre
+sidon
+sarepta
+tarshish
+ophir
+sheba
+dedan
+cush
+uz
+teman
+mizpah
+ramah
+anathoth
+tekoa
+nob
+gibeah
+aijalon
+timnath
+sorek
+etam
+maon
+paran
+zin
+pisgah
+nebo
+peor
+jabbok
+arnon
+succoth
+elim
+marah
+rephidim
+meribah
+
+# Creatures
+serpent
+dragon
+leviathan
+behemoth
+lion
+lioness
+leopard
+wolf
+bear
+fox
+hart
+hind
+roebuck
+coney
+badger
+mole
+mouse
+tortoise
+chameleon
+lizard
+snail
+adder
+asp
+cockatrice
+viper
+scorpion
+spider
+grasshopper
+locust
+beetle
+ant
+flea
+worm
+moth
+palmerworm
+cankerworm
+caterpiller
+whale
+fish
+raven
+dove
+turtledove
+pigeon
+sparrow
+swallow
+crane
+stork
+heron
+lapwing
+bat
+eagle
+vulture
+ossifrage
+kite
+glede
+hawk
+cuckow
+owl
+bittern
+cormorant
+pelican
+quail
+partridge
+peacock
+ostrich
+camel
+dromedary
+horse
+ass
+colt
+foal
+mule
+oxen
+bullock
+heifer
+lamb
+ram
+ewe
+goat
+kid
+swine
+sheep
+flock
+
+# Things, offices, and matters
+covenant
+ark
+manna
+omer
+ephah
+shekel
+talent
+cubit
+span
+gerah
+farthing
+mite
+tabernacle
+temple
+sanctuary
+altar
+sacrifice
+offering
+oblation
+atonement
+propitiation
+mercy
+grace
+faith
+hope
+charity
+righteousness
+iniquity
+transgression
+sin
+trespass
+redemption
+salvation
+saviour
+redeemer
+prophet
+prophetess
+priest
+king
+queen
+shepherd
+scribe
+pharisee
+sadducee
+publican
+lawyer
+centurion
+legion
+apostle
+disciple
+deacon
+elder
+bishop
+evangelist
+martyr
+witness
+baptism
+baptist
+repentance
+conversion
+regeneration
+justification
+sanctification
+glorification
+predestination
+election
+adoption
+inheritance
+heir
+testament
+gospel
+epistle
+parable
+proverb
+riddle
+oracle
+vision
+dream
+interpretation
+prophecy
+tongues
+miracle
+sign
+wonder
+healing
+anointing
+leaven
+passover
+pentecost
+jubilee
+sabbath
+tithe
+firstfruits
+firstborn
+birthright
+blessing
+curse
+hymn
+selah
+amen
+hallelujah
+alleluia
+hosanna
+maranatha
+corban
+raca
+mammon
+gehenna
+sheol
+paradise
+heaven
+hell
+abyss
+cherub
+cherubim
+seraph
+seraphim
+angel
+archangel
+demon
+devil
+satan
+lucifer
+beelzebub
+apollyon
+abaddon
+antichrist
+beast
+scroll
+seal
+trumpet
+vial
+censer
+incense
+frankincense
+myrrh
+spikenard
+cassia
+hyssop
+aloes
+calamus
+balm
+cedar
+shittim
+gopher
+olive
+oliveyard
+fig
+vine
+vineyard
+winepress
+threshingfloor
+sickle
+yoke
+plow
+chariot
+sword
+spear
+shield
+buckler
+bow
+arrow
+quiver
+sling
+helmet
+breastplate
+greaves
+girdle
+ephod
+mitre
+urim
+thummim
+sackcloth
+ashes
+mourning
+lamentation
+wailing
+gnashing
+weeping
+rejoicing
+gladness
+feast
+famine
+pestilence
+plague
+boil
+mildew
+blasting
+captivity
+exile
+remnant
+restoration
+resurrection
+ascension
+transfiguration
+crucifixion
+cross
+nails
+thorns
+crown
+robe
+scarlet
+purple
+linen
+synagogue
+council
+phylactery
+jasper
+sapphire
+chalcedony
+emerald
+sardonyx
+sardius
+chrysolite
+beryl
+topaz
+chrysoprasus
+jacinth
+amethyst
+pearl
+ruby
+crystal
+brass
+iron
+tin
+lead
+silver
+gold
+brimstone
+pitch
+slime
+mortar
+brick
+straw
+stubble
+chaff
+wheat
+barley
+millet
+fitches
+tares
+corn
+sheaf
+sheaves
+gleaning
+vintage
+honeycomb
+honey
+milk
+butter
+venison
+pottage
+lentiles
+cummin
+anise
+mint
+rue
+mustard
+bramble
+thistle
+thorn
+nettle
+myrtle
+willow
+poplar
+sycomore
+teil
+almond
+pomegranate
+apple
+melon
+cucumber
+leek
+onion
+garlick
+wine
+vinegar
+net
+hook
+anchor
+ship
+boat
+mast
+sail
+oar
+haven
+tempest
+whirlwind
+earthquake
+thunder
+lightning
+hail
+snow
+frost
+dew
+rain
+harvest
+seedtime
+morning
+evening
+noonday
+midnight
+watch
+cockcrowing
+throne
+sceptre
+diadem
+signet
+bracelet
+earring
+sandal
+shoe
+latchet
+staff
+rod
+lamp
+candlestick
+oil
+flagon
+pitcher
+cruse
+basket
+bottle
+wineskin
+millstone
+besom
+plumbline
+ensign
+banner
+standard
+tent
+pavilion
+booth
+gate
+wall
+tower
+fortress
+citadel
+stronghold
+refuge
+rock
+cornerstone
+foundation
+pillar
+porch
+court
+veil
+laver
+shewbread
+firepan
+snuffers
+tongs
+grate
+socket
+taches
+badgers
+rams
+goats
+
+# The King James voice
+behold
+hearken
+beseech
+smite
+smote
+begat
+begotten
+firmament
+verily
+peradventure
+haply
+abomination
+desolation
+tribulation
+persecution
+principality
+dominion
+holy
+hallowed
+sanctified
+consecrated
+anointed
+blessed
+cursed
+clean
+unclean
+profane
+sacred
+divine
+eternal
+everlasting
+immortal
+incorruptible
+righteous
+wicked
+ungodly
+godly
+meek
+humble
+contrite
+lowly
+proud
+haughty
+stiffnecked
+faithful
+faithless
+believing
+unbelieving
+elect
+chosen
+called
+justified
+redeemed
+ransomed
+delivered
+saved
+lost
+perished
+condemned
+judged
+glorified
+exalted
+abased
+magnified
+praised
+worship
+worshipped
+praise
+glory
+honour
+majesty
+power
+might
+strength
+wisdom
+knowledge
+understanding
+counsel
+fear
+reverence
+awe
+dread
+terror
+wrath
+anger
+fury
+indignation
+vengeance
+recompense
+reward
+punishment
+chastening
+longsuffering
+forbearance
+patience
+temperance
+meekness
+gentleness
+goodness
+kindness
+lovingkindness
+compassion
+pity
+truth
+verity
+lie
+falsehood
+deceit
+guile
+flattery
+hypocrisy
+hypocrite
+heresy
+schism
+sedition
+strife
+envy
+jealousy
+covetousness
+idolatry
+witchcraft
+sorcery
+divination
+enchantment
+necromancer
+soothsayer
+magician
+astrologer
+stargazers
+wizard
+leprosy
+leper
+palsy
+dropsy
+lunatick
+blind
+lame
+halt
+maimed
+withered
+deaf
+dumb
+barren
+fruitful
+multiply
+replenish
+subdue
+</script>
+<script id="wordlist-dance" type="text/plain"># Dance lexicon — curated for Wordplay.
+# Styles, ballet vocabulary (accents dropped), movement, music, the studio.
+# Non-alphabetic lines (like these) are ignored by the loader.
+
+# Styles and dances
+waltz
+tango
+foxtrot
+quickstep
+polka
+mazurka
+minuet
+gavotte
+sarabande
+gigue
+bourree
+allemande
+courante
+galliard
+pavane
+bolero
+flamenco
+fandango
+sevillanas
+jota
+salsa
+mambo
+rumba
+samba
+merengue
+bachata
+cumbia
+charleston
+lindy
+swing
+jive
+boogie
+twist
+disco
+funk
+house
+breaking
+breakdance
+popping
+locking
+krumping
+voguing
+waacking
+shuffling
+jig
+reel
+hornpipe
+clogging
+morris
+cancan
+cakewalk
+tarantella
+polonaise
+csardas
+hora
+kolo
+hula
+tap
+ballet
+jazz
+contemporary
+modern
+butoh
+kathak
+kathakali
+bharatanatyam
+odissi
+capoeira
+zumba
+macarena
+lambada
+conga
+limbo
+hoedown
+ceilidh
+flossing
+zouk
+kizomba
+milonga
+habanera
+schottische
+quadrille
+cotillion
+galop
+bergamask
+bransle
+farandole
+saltarello
+passepied
+rigaudon
+chaconne
+passacaglia
+
+# Ballet vocabulary (accents dropped, single words)
+arabesque
+attitude
+assemble
+ballon
+ballonne
+barre
+batterie
+brise
+cabriole
+chaine
+chasse
+coupe
+croise
+degage
+developpe
+echappe
+efface
+elevation
+entrechat
+fondu
+fouette
+frappe
+glissade
+jete
+pirouette
+pique
+plie
+penche
+pointe
+demipointe
+promenade
+releve
+retire
+reverence
+saute
+sissonne
+soutenu
+tendu
+tombe
+adagio
+allegro
+coda
+divertissement
+variation
+pas
+grand
+petit
+demi
+epaulement
+aplomb
+turnout
+spotting
+balancoire
+cambre
+detourne
+failli
+gargouillade
+manege
+pistolet
+royale
+temps
+battement
+ronde
+
+# Movement
+leap
+jump
+spin
+twirl
+whirl
+sway
+glide
+slide
+shuffle
+stomp
+kick
+step
+hop
+skip
+gallop
+prance
+strut
+sashay
+swagger
+shimmy
+wiggle
+bounce
+dip
+lift
+carry
+turn
+twist
+bend
+stretch
+reach
+extend
+contract
+release
+fall
+recover
+roll
+spiral
+undulate
+ripple
+pulse
+vibrate
+freeze
+pose
+gesture
+sweep
+swoop
+lunge
+crouch
+arch
+curl
+unfurl
+suspend
+rebound
+swingthrough
+travel
+traverse
+cross
+weave
+circle
+orbit
+tilt
+lean
+balance
+teeter
+wobble
+melt
+collapse
+rise
+soar
+float
+drift
+dart
+dash
+skitter
+stamp
+brush
+flick
+dab
+press
+wring
+slash
+punch
+glidestep
+sidestep
+backstep
+grapevine
+boxstep
+crossover
+kickball
+heelturn
+toetap
+headroll
+shoulderroll
+hipsway
+bodywave
+armwave
+isolation
+footwork
+handwork
+floorwork
+partnering
+counterbalance
+promenading
+
+# Music and structure
+rhythm
+beat
+tempo
+meter
+count
+phrase
+measure
+bar
+accent
+syncopation
+downbeat
+upbeat
+offbeat
+groove
+melody
+harmony
+cadence
+crescendo
+diminuendo
+staccato
+legato
+rubato
+fermata
+vamp
+bridge
+chorus
+verse
+intro
+outro
+break
+drop
+polyrhythm
+counterpoint
+unison
+canon
+callback
+refrain
+motif
+theme
+dynamics
+musicality
+phrasing
+timing
+
+# People and places
+dancer
+choreographer
+partner
+soloist
+principal
+prima
+ballerina
+danseur
+ensemble
+troupe
+company
+corps
+studio
+stage
+wings
+proscenium
+audience
+recital
+performance
+rehearsal
+audition
+casting
+conservatory
+academy
+ballroom
+discotheque
+club
+floor
+circle
+lines
+formation
+diagonal
+center
+downstage
+upstage
+stageleft
+stageright
+spotlight
+footlights
+curtain
+bow
+encore
+ovation
+matinee
+gala
+premiere
+repertory
+repertoire
+season
+tour
+residency
+masterclass
+workshop
+intensive
+mentor
+maestro
+accompanist
+percussionist
+drummer
+
+# Craft and gear
+choreography
+improvisation
+composition
+mirroring
+levels
+momentum
+alignment
+posture
+extension
+flexibility
+core
+breath
+stamina
+strength
+grace
+poise
+precision
+control
+abandon
+flow
+attack
+suspension
+weight
+gravity
+lightness
+speed
+stillness
+silence
+tutu
+leotard
+tights
+slippers
+barefoot
+heels
+taps
+costume
+sash
+skirt
+fan
+castanets
+ribbon
+hoop
+scarf
+mask
+makeup
+bun
+chignon
+rosin
+marley
+mirror
+warmup
+cooldown
+stretching
+conditioning
+technique
+training
+practice
+drill
+routine
+combination
+sequence
+transition
+entrance
+exit
+finale
+opener
+showstopper
+</script>
+
 <script id="engine">
 'use strict';
 const VOWELS = new Set(['AA','AE','AH','AO','AW','AY','EH','ER','EY','IH','IY','OW','OY','UH','UW']);
-const RELS = ['anagram','oneLetter','homophone','rhyme','fusion','audible','hidden'];
+const RELS = ['anagram','oneLetter','homophone','rhyme','fusion','hidden','audible','reversal','association'];
 const REL_META = {
-  anagram:   { name: 'Anagram',        glyph: '☉', color: '#c2810e' },
-  oneLetter: { name: 'One letter',     glyph: '☽', color: '#3f66b0' },
-  homophone: { name: 'Homophone',      glyph: '☿', color: '#7d4f9e' },
-  rhyme:     { name: 'Rhyme',          glyph: '♀', color: '#b04a52' },
-  fusion:    { name: 'Fusion',         glyph: '♂', color: '#2e7d5b' },
-  hidden:    { name: 'Hidden inside',  glyph: '♄', color: '#94722a' },
-  audible:   { name: 'Heard inside',   glyph: '♃', color: '#2e7d86' },
+  anagram:     { name: 'Anagram',        glyph: '☉', color: '#f2991a', notation: 'letter permutation',
+                 explanation: 'both words use exactly the same letters, rearranged (silent / listen)' },
+  oneLetter:   { name: 'One letter',     glyph: '☽', color: '#4080f2', notation: 'single-letter mutation',
+                 explanation: 'changing, adding, or dropping one letter turns one word into the other (word → ward)' },
+  homophone:   { name: 'Homophone',      glyph: '☿', color: '#995ae6', notation: 'identical phonetics',
+                 explanation: 'spelled differently but pronounced exactly the same (pair / pear)' },
+  rhyme:       { name: 'Rhyme',          glyph: '♀', color: '#e64d73', notation: 'rhyme bond',
+                 explanation: 'the words share their final sounds, from the last stressed vowel on (moon / June)' },
+  fusion:      { name: 'Fusion',         glyph: '♂', color: '#26b373', notation: 'phonetic fusion',
+                 explanation: 'the words overlap by sound and fuse into one audible pseudo-word (brain ⋈ angel → brangel)' },
+  hidden:      { name: 'Hidden inside',  glyph: '♄', color: '#bf991a', notation: 'substring',
+                 explanation: 'one word is spelled, letter for letter, inside the other (ear inside heart)' },
+  audible:     { name: 'Heard inside',   glyph: '♃', color: '#26a6bf', notation: 'audible substring',
+                 explanation: "one word can be heard inside the other's pronunciation, whatever the spelling (cane inside hurricane)" },
+  reversal:    { name: 'Reversal',       glyph: '♆', color: '#666b8c', notation: 'mirror word',
+                 explanation: 'one word is the other spelled backwards (stressed / desserts)' },
+  association: { name: 'Association',    glyph: '♅', color: '#cc40b8', notation: 'semantic association',
+                 explanation: "the words keep close company in meaning — always empty here: it needs Apple's on-device semantic model, only available in the macOS app" },
 };
 
+// --- dictionaries: multiple word lists, switchable at runtime ---
+// "System" (macOS's own /usr/share/dict/words) is deliberately not offered
+// here: it isn't a bundled asset, just the live system dictionary, so there
+// is nothing offline to bake into a browser page for it.
+const DICTS = {
+  scrabble: { label: 'Scrabble (ENABLE)', raw: null, built: false },
+  biblical: { label: 'Biblical (KJV)',    raw: null, built: false },
+  dance:    { label: 'Dance',             raw: null, built: false },
+};
+let activeDict = 'scrabble';
 let wordSet = new Set();
-let entries = [];             // [word, phones[]] — pronounced subset
+let sigMap = new Map();       // sorted letters -> words (active dictionary only)
+
+function parseWordListText(text) {
+  const set = new Set(), sig = new Map();
+  for (const raw of text.split('\n')) {
+    const w = raw.trim().toLowerCase();
+    if (!w || ![...w].every(c => c >= 'a' && c <= 'z')) continue;   // comments, blanks, digits out
+    if (set.has(w)) continue;
+    set.add(w);
+    const key = [...w].sort().join('');
+    let b = sig.get(key); if (!b) sig.set(key, b = []); b.push(w);
+  }
+  return { set, sig };
+}
+function buildDictIndex(name) {
+  const d = DICTS[name];
+  if (!d.built) {
+    const { set, sig } = parseWordListText(d.raw);
+    d.set = set; d.sig = sig; d.built = true;
+  }
+  return d;
+}
+function setActiveDict(name) {
+  if (!DICTS[name]) return;
+  const d = buildDictIndex(name);
+  activeDict = name;
+  wordSet = d.set; sigMap = d.sig;
+}
+
+let entries = [];             // [word, phones[]] — pronounced subset (dictionary-independent)
 let pron = new Map();
 let homoMap = new Map();      // phones key -> words
 let rhymeMap = new Map();     // rhyme key -> words
 let rhymeKeyOf = new Map();
-let sigMap = new Map();       // sorted letters -> words
 
 function loadLexicon() {
-  for (const w of document.getElementById('wordlist').textContent.split('\n')) {
-    if (!w) continue;
-    wordSet.add(w);
-    const sig = [...w].sort().join('');
-    let b = sigMap.get(sig); if (!b) sigMap.set(sig, b = []); b.push(w);
-  }
+  DICTS.scrabble.raw = document.getElementById('wordlist').textContent;
+  DICTS.biblical.raw = document.getElementById('wordlist-biblical').textContent;
+  DICTS.dance.raw = document.getElementById('wordlist-dance').textContent;
+  setActiveDict('scrabble');
   for (const line of document.getElementById('lexicon').textContent.split('\n')) {
     if (!line) continue;
     const [w, ph, rk] = line.split('|');
@@ -223965,7 +225512,7 @@ function loadLexicon() {
   }
 }
 
-// --- fusion (as in Fusion.swift) ---
+// --- fusion (as in Fusion.swift; dictionary-independent, CMU pronounced words) ---
 function eqSlice(a, ai, b, bi, n) {
   for (let k = 0; k < n; k++) if (a[ai+k] !== b[bi+k]) return false;
   return true;
@@ -224022,6 +225569,8 @@ function audibleWithin(word) {
 }
 
 // --- neighbors per relation (as in Connections.swift / WordLadder / Cryptic) ---
+// oneLetterAway / anagramsOf / hiddenIn read the module-level wordSet/sigMap,
+// so they automatically follow whichever dictionary is active.
 const AZ = 'abcdefghijklmnopqrstuvwxyz';
 function oneLetterAway(w) {
   const out = [];
@@ -224066,6 +225615,19 @@ function hiddenIn(w) {
     }
   return [...out].sort((a, b) => b.length - a.length);
 }
+/// The word spelled backwards, if that reversal is itself a dictionary word
+/// in the active list (stressed / desserts).
+function reversalOf(w) {
+  const rev = [...w].reverse().join('');
+  if (rev === w || !wordSet.has(rev)) return [];
+  return [rev];
+}
+/// Semantic neighbors: on the macOS app this comes from Apple's on-device
+/// NLEmbedding, which has no browser equivalent — always empty here. The
+/// dimension still exists (glyph, color, legend, honest tooltip) for parity.
+function associationOf(w) {
+  return [];
+}
 
 const DETAILS = {
   anagram:   (a, b) => `${b}: the letters of ${a}, rearranged`,
@@ -224075,9 +225637,13 @@ const DETAILS = {
   fusion:    (a, b) => `${b} sound-overlaps ${a}`,
   hidden:    (a, b) => `${b} is spelled inside ${a}`,
   audible:   (a, b) => `you can hear ${b} inside ${a}`,
+  reversal:  (a, b) => `${b}: ${a} spelled backwards`,
+  association: (a, b) => `${b} keeps company with ${a}`,
 };
 
-function connections(word, perRelation) {
+/// `relations` restricts which dimensions are searched at all — a disabled
+/// relation costs nothing and contributes nothing (as in Connections.swift).
+function connections(word, perRelation, relations) {
   const seen = new Set([word]);
   const out = [];
   const add = (list, rel) => {
@@ -224088,17 +225654,22 @@ function connections(word, perRelation) {
       seen.add(w); out.push({ word: w, rel, detail: DETAILS[rel](word, w) }); n++;
     }
   };
-  add(anagramsOf(word), 'anagram');
-  add(oneLetterAway(word), 'oneLetter');
-  add(homophonesOf(word), 'homophone');
-  add(rhymesOf(word), 'rhyme');
-  add(fusionPartners(word, 2, perRelation * 2), 'fusion');
-  add(audibleWithin(word), 'audible');
-  add(hiddenIn(word), 'hidden');
+  if (relations.has('anagram')) add(anagramsOf(word), 'anagram');
+  if (relations.has('oneLetter')) add(oneLetterAway(word), 'oneLetter');
+  if (relations.has('homophone')) add(homophonesOf(word), 'homophone');
+  if (relations.has('rhyme')) add(rhymesOf(word), 'rhyme');
+  if (relations.has('fusion')) add(fusionPartners(word, 2, perRelation * 2), 'fusion');
+  if (relations.has('audible')) add(audibleWithin(word), 'audible');
+  if (relations.has('hidden')) add(hiddenIn(word), 'hidden');
+  if (relations.has('reversal')) add(reversalOf(word), 'reversal');
+  if (relations.has('association')) add(associationOf(word), 'association');
   return out;
 }
 
 // --- six degrees (as in PathFinder.swift, bidirectional) ---
+// Always searches the original seven — reversal and association are not
+// edges in the divination graph, matching PathFinder.swift exactly (it never
+// wires them into `neighbors(of:)`, only into the exhaustive `phrase` switch).
 function neighborsFor(u, isEndpoint) {
   const out = [];
   for (const w of homophonesOf(u)) out.push([w, 'homophone']);
@@ -224164,7 +225735,8 @@ function tone(freq, amp = 0.14, when = 0, dur = 1.2, type = 'sine') {
   osc.start(t0); osc.stop(t0 + dur + 0.05);
 }
 const CHIME = { seed: 523.25, anagram: 261.63, oneLetter: 293.66, homophone: 329.63,
-                rhyme: 392, fusion: 440, hidden: 587.33, audible: 659.26 };
+                rhyme: 392, fusion: 440, hidden: 587.33, audible: 659.26,
+                reversal: 783.99, association: 880.00 };
 
 // ── consonance: how alike two pronunciations sound, in [0,1] ──────────────
 function consonance(a, b) {
@@ -224224,15 +225796,48 @@ function speak(word) {
   speechSynthesis.speak(u);
 }
 
+// --- dimensions, complexity, cadence, glyphs: persisted like @AppStorage ---
+let relationsOn = new Set();      // empty = all off, matching the macOS app's default
+let perRelation = 1;              // complexity: sparse=1, modest=2, rich=4, lush=6
+let glyphsOn = false;
+let cadenceSeconds = 3;
+const CADENCES = [1, 2, 3, 5, 10, 30];
+const COMPLEXITIES = [[1, 'sparse — one per dimension'], [2, 'modest — two'],
+                       [4, 'rich — four'], [6, 'lush — six']];
+
+const SETTINGS_KEY = 'wordplay-codex-settings';
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      relations: [...relationsOn], perRelation, glyphsOn, cadenceSeconds,
+      chimesOn, voiceOn, dict: activeDict, autoSpread: M.autoSpread,
+    }));
+  } catch (e) {}
+}
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null');
+    if (!s) return;
+    relationsOn = new Set((s.relations || []).filter(r => RELS.includes(r)));
+    perRelation = COMPLEXITIES.some(c => c[0] === s.perRelation) ? s.perRelation : 1;
+    glyphsOn = !!s.glyphsOn;
+    cadenceSeconds = CADENCES.includes(s.cadenceSeconds) ? s.cadenceSeconds : 3;
+    chimesOn = !!s.chimesOn;
+    voiceOn = !!s.voiceOn;
+    if (s.dict && DICTS[s.dict]) setActiveDict(s.dict);
+    M.autoSpread = !!s.autoSpread;
+  } catch (e) {}
+}
+
 // --- model ---
 const M = {
-  words: [],            // {id, rel, detail, x, y, dx, dy, gen, born, expanded, viral,
+  words: [],            // {id, rel, detail, x, y, dx, dy, gen, born, expanded, viral, parent,
                         //  cx, cy, cr, expandedAt, dying}
   index: new Map(),
   camX: 0, camY: 0, camTarget: null, zoom: 1,
   current: null, hovered: null,
   lastSpread: 0, lastInteraction: 0,
-  autoSpread: true, busy: false,
+  autoSpread: false, busy: false,
   MAX: 110,
 };
 const logLines = [];
@@ -224260,7 +225865,7 @@ function clearAll() {
 }
 function seedWord(w) {
   clearAll();
-  M.words.push({ id: w, rel: null, detail: 'the first inscription',
+  M.words.push({ id: w, rel: null, detail: 'the first inscription', parent: null,
                  x: 0, y: 0, dx: 0, dy: -1, gen: 0, born: Date.now(),
                  expanded: false, viral: false, cx: null, cy: null, cr: 0,
                  expandedAt: null, dying: null });
@@ -224288,7 +225893,7 @@ function inscribe(host, found, viral) {
       ? outA + spread * k / n
       : outA - spread / 2 + spread * (n === 1 ? 0.5 : k / (n - 1));
     M.index.set(c.word, M.words.length);
-    M.words.push({ id: c.word, rel: c.rel, detail: c.detail,
+    M.words.push({ id: c.word, rel: c.rel, detail: c.detail, parent: host,
                    x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r,
                    dx: Math.cos(a), dy: Math.sin(a), gen: h.gen + 1,
                    born: Date.now(), expanded: false, viral,
@@ -224303,21 +225908,27 @@ function inscribe(host, found, viral) {
 }
 function expand(host, auto) {
   if (M.busy) return;
+  if (!relationsOn.size) {
+    setStatus('all dimensions are set aside — switch some on in the ☰ dims menu or touch the legend below');
+    return;
+  }
   M.busy = true;
+  const count = auto ? Math.max(1, perRelation - 2) : perRelation;
   setTimeout(() => {           // let the UI breathe; searches take ~10ms anyway
-    const found = connections(host, auto ? 2 : 4);
+    const found = connections(host, count, relationsOn);
     const placed = inscribe(host, found, !!auto);
     if (auto && placed > 0) {
       const h = M.words[M.index.get(host)];
       M.camTarget = [-h.cx, -h.cy];
     }
     if (placed > 0) {
+      if (!auto) speak(host);
       record(auto ? `✦ the codex inscribed ${host} · +${placed}`
                   : `${host}: ${placed} inscriptions`, !!auto);
       // Manual open: sound the whole neighbourhood as a chord so you hear how
       // consonant this word's connections are. Auto-growth stays a quiet pulse.
       if (auto) infection();
-      else { soundNeighborhood(host, found.map(c => c.word)); speak(host); }
+      else soundNeighborhood(host, found.map(c => c.word));
     } else {
       record(`${host}: nothing new under this sun`);
     }
@@ -224347,8 +225958,8 @@ setInterval(() => {
     const victim = beginDecay();
     if (victim) { record(`∴ ${victim} fades from the page`); tone(130.8, .05); }
   }
-  if (!M.autoSpread || M.busy || M.words.length >= M.MAX || !M.words.length) return;
-  if (Date.now() - M.lastSpread < 3200) return;
+  if (!M.autoSpread || M.busy || M.words.length >= M.MAX || !M.words.length || !relationsOn.size) return;
+  if (Date.now() - M.lastSpread < cadenceSeconds * 1000) return;
   const unopened = M.words.filter(w => !w.expanded && !w.dying);
   const opened = M.words.filter(w => w.expanded);
   let host = null;
@@ -224401,6 +226012,8 @@ window.addEventListener('resize', resize);
 resize();
 
 const INK = '#52381f';
+const FRONTIER = [33, 107, 97];   // verdigris — unopened, clickable doors
+const OCHRE = [158, 46, 26];      // red ochre — the codex's own hand
 function drift(x, y, seed, t) {
   const s = seed & 1023;
   return [x + Math.sin(t * 0.11 + s) * 3.2, y + Math.cos(t * 0.087 + s * 1.7) * 3.2];
@@ -224532,19 +226145,32 @@ function draw(nowMs) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle + (flip ? Math.PI : 0));
-    const col = w.viral ? `rgba(98,24,16,${alpha})` : `rgba(82,56,31,${alpha})`;
-    ctx.fillStyle = col;
+    // Navigation ink: ochre = self-written, verdigris = unopened frontier
+    // (touch to open), sepia = already opened.
+    let rgb;
+    if (w.viral) rgb = OCHRE;
+    else if (!w.expanded && !w.dying) rgb = FRONTIER;
+    else rgb = [82, 56, 31];
+    ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
     ctx.font = (isCur ? '600 italic 15px' : 'italic 13px') + ' Georgia';
     ctx.textAlign = flip ? 'right' : 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(w.id, flip ? -26 : 26, 0);
     ctx.restore();
     if (w.rel) {
       const meta = REL_META[w.rel];
-      ctx.fillStyle = meta.color;
-      ctx.globalAlpha = 0.9 * alpha;
-      ctx.font = '13px Georgia'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(meta.glyph, x - w.dx * 12, y - w.dy * 12);
-      ctx.globalAlpha = 1;
+      const mark = { x: x - w.dx * 12, y: y - w.dy * 12 };
+      if (glyphsOn) {
+        ctx.fillStyle = meta.color;
+        ctx.globalAlpha = 0.9 * alpha;
+        ctx.font = '13px Georgia'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(meta.glyph, mark.x, mark.y);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = meta.color;
+        ctx.globalAlpha = 0.75 * alpha;
+        ctx.beginPath(); ctx.arc(mark.x, mark.y, 2.5, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
   }
   requestAnimationFrame(draw);
@@ -224574,16 +226200,30 @@ const IV_NAME = {0:'unison',1:'minor 2nd',2:'major 2nd',3:'minor 3rd',4:'major 3
   11:'major 7th',12:'octave'};
 function showTip(word, clientX, clientY) {
   if (!word || !word.detail) { tip.style.display = 'none'; return; }
+  const meta = word.rel ? REL_META[word.rel] : null;
+  let caption = word.detail;
+  if (meta) {
+    const mark = glyphsOn ? `${meta.glyph} ` : '';
+    caption = `${mark}${meta.name} — ${meta.explanation}\n${caption}`;
+  }
+  if (word.parent) {
+    caption += M.index.has(word.parent)
+      ? `\njoined through ${word.parent}`
+      : `\njoined through ${word.parent}, whose ink has since faded`;
+  }
   const ph = pron.get(word.id);
+  if (ph) caption += '\n/' + ph.join(' ') + '/';
   // If this word hangs off a parent, name how consonant the pair sounds.
-  let harmony = '';
   if (word.rel && M.current && M.current !== word.id) {
     const c = consonance(M.current, word.id);
     const iv = intervalFor(c);
     const feel = c >= 0.66 ? 'consonant' : c >= 0.4 ? 'tense' : 'dissonant';
-    harmony = `\n♪ ${IV_NAME[iv]} · ${feel} (${c.toFixed(2)})`;
+    caption += `\n♪ ${IV_NAME[iv]} · ${feel} (${c.toFixed(2)})`;
   }
-  tip.textContent = word.detail + (ph ? '\n/' + ph.join(' ') + '/' : '') + harmony;
+  caption += word.viral
+    ? '\ninscribed by the codex itself · click to open its circle'
+    : '\nclick to open its circle';
+  tip.textContent = caption;
   tip.style.display = 'block';
   const tw = tip.offsetWidth || 240;
   tip.style.left = Math.max(8, Math.min(clientX + 14, W - tw - 8)) + 'px';
@@ -224726,15 +226366,18 @@ document.getElementById('clear').addEventListener('click', clearAll);
 document.getElementById('spread').addEventListener('click', function () {
   M.autoSpread = !M.autoSpread;
   this.classList.toggle('on', M.autoSpread);
+  saveSettings();
 });
 document.getElementById('chimes').addEventListener('click', function () {
   chimesOn = !chimesOn;
   this.classList.toggle('on', chimesOn);
+  saveSettings();
 });
 document.getElementById('voice').addEventListener('click', function () {
   voiceOn = !voiceOn;
   this.classList.toggle('on', voiceOn);
   if (voiceOn && M.current) speak(M.current);
+  saveSettings();
 });
 document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a');
@@ -224760,16 +226403,103 @@ document.getElementById('fold').addEventListener('click', () => {
 canvas.addEventListener('pointerdown', () => {
   if (onPhone && !document.body.classList.contains('folded'))
     document.body.classList.add('folded');
+  document.querySelectorAll('.popover').forEach(p => p.classList.add('hidden'));
 }, true);   // capture phase: fold before the canvas handles the gesture
 
-// legend
-document.getElementById('legend').innerHTML =
-  Object.entries(REL_META).map(([k, m]) =>
-    `<span><span style="color:${m.color}">${m.glyph}</span> ${m.name}</span>`).join('') +
-  '<span class="hint">turn on ♪ — alike words ring consonant, unlike words clash</span>';
+// --- the dictionary switcher ---
+function renderDictSelect() {
+  const sel = document.getElementById('dict');
+  sel.innerHTML = Object.entries(DICTS).map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
+  sel.value = activeDict;
+  sel.addEventListener('change', () => {
+    setActiveDict(sel.value);
+    record(`the dictionary changes: ${DICTS[sel.value].label}`);
+    saveSettings();
+  });
+}
+
+// --- popovers: dims (relation filter + complexity + glyphs) and cadence ---
+function bindPopover(btnId, panelId) {
+  const btn = document.getElementById(btnId), panel = document.getElementById(panelId);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const willOpen = panel.classList.contains('hidden');
+    document.querySelectorAll('.popover').forEach(p => p.classList.add('hidden'));
+    if (willOpen) panel.classList.remove('hidden');
+  });
+  panel.addEventListener('click', e => e.stopPropagation());
+}
+document.addEventListener('click', () => document.querySelectorAll('.popover').forEach(p => p.classList.add('hidden')));
+
+function toggleRelation(rel, forceState) {
+  const on = forceState === undefined ? !relationsOn.has(rel) : forceState;
+  if (on) relationsOn.add(rel); else relationsOn.delete(rel);
+  saveSettings(); renderLegend(); renderDimsPanel();
+}
+function setAllRelations(on) {
+  relationsOn = new Set(on ? RELS : []);
+  saveSettings(); renderLegend(); renderDimsPanel();
+}
+
+function renderDimsPanel() {
+  const panel = document.getElementById('dimsPanel');
+  panel.innerHTML =
+    RELS.map(k => {
+      const m = REL_META[k], on = relationsOn.has(k);
+      return `<label title="${m.explanation.replace(/"/g,'&quot;')}"><input type="checkbox" data-rel="${k}" ${on ? 'checked' : ''}> ${glyphsOn ? m.glyph + ' ' : ''}${m.name}</label>`;
+    }).join('') +
+    `<div class="row"><button type="button" class="mini" id="allOn">All on</button><button type="button" class="mini" id="allOff">All off</button></div>` +
+    `<hr><div class="label">complexity</div>` +
+    COMPLEXITIES.map(([v, label]) =>
+      `<label><input type="radio" name="complexity" value="${v}" ${perRelation === v ? 'checked' : ''}> ${label}</label>`).join('') +
+    `<hr><label><input type="checkbox" id="glyphsToggle" ${glyphsOn ? 'checked' : ''}> planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄ ♅ ♆)</label>`;
+  panel.querySelectorAll('input[type=checkbox][data-rel]').forEach(cb =>
+    cb.addEventListener('change', () => toggleRelation(cb.dataset.rel, cb.checked)));
+  document.getElementById('allOn').addEventListener('click', () => setAllRelations(true));
+  document.getElementById('allOff').addEventListener('click', () => setAllRelations(false));
+  panel.querySelectorAll('input[name=complexity]').forEach(r =>
+    r.addEventListener('change', () => { perRelation = Number(r.value); saveSettings(); }));
+  document.getElementById('glyphsToggle').addEventListener('change', e => {
+    glyphsOn = e.target.checked; saveSettings(); renderLegend(); renderDimsPanel();
+  });
+}
+function renderCadencePanel() {
+  document.getElementById('cadencePanel').innerHTML =
+    '<div class="label">cadence</div>' +
+    CADENCES.map(s =>
+      `<label><input type="radio" name="cadence" value="${s}" ${cadenceSeconds === s ? 'checked' : ''}> every ${s === 1 ? 'second' : s + ' seconds'}</label>`
+    ).join('');
+  document.querySelectorAll('input[name=cadence]').forEach(r =>
+    r.addEventListener('change', () => { cadenceSeconds = Number(r.value); saveSettings(); }));
+}
+
+// legend — each dimension is a clickable toggle, struck through when off
+function renderLegend() {
+  const parts = RELS.map(k => {
+    const m = REL_META[k], on = relationsOn.has(k);
+    const mark = glyphsOn
+      ? `<span class="lmark" style="color:${m.color};opacity:${on ? 0.9 : 0.3}">${m.glyph}</span>`
+      : `<span class="lmark ldot" style="background:${m.color};opacity:${on ? 0.7 : 0.2}"></span>`;
+    return `<button type="button" class="legendItem" data-rel="${k}" title="${m.name}: ${m.explanation.replace(/"/g,'&quot;')}"><span style="opacity:${on ? 1 : 0.55}">${mark} <span style="text-decoration:${on ? 'none' : 'line-through'}">${m.name}</span></span></button>`;
+  }).join('');
+  document.getElementById('legend').innerHTML = parts +
+    '<span class="hint">green ink = unopened doors · ochre = the codex\'s own hand · drag wanders · scroll zooms</span>';
+  document.querySelectorAll('.legendItem').forEach(btn =>
+    btn.addEventListener('click', () => toggleRelation(btn.dataset.rel)));
+}
 
 // boot
 loadLexicon();
+loadSettings();
+renderDictSelect();
+document.getElementById('chimes').classList.toggle('on', chimesOn);
+document.getElementById('voice').classList.toggle('on', voiceOn);
+document.getElementById('spread').classList.toggle('on', M.autoSpread);
+renderDimsPanel();
+renderCadencePanel();
+renderLegend();
+bindPopover('dimsBtn', 'dimsPanel');
+bindPopover('cadenceBtn', 'cadencePanel');
 const restored = restore();
 if (restored > 0) record(`the codex remembers: ${restored} inscriptions restored.`);
 updateCount();
