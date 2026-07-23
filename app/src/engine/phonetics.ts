@@ -14,11 +14,18 @@ export class PhoneticDictionary {
   private readonly rhymeIndex: Map<string, Set<string>>;
   /** full pronunciation, stress stripped -> words (for homophones) */
   private readonly homophoneIndex: Map<string, Set<string>>;
+  /**
+   * word -> its rhyme keys. Needed because `rhymeKey()` reads stress digits,
+   * which the baked lexicon has already stripped — so lookups store the key
+   * at load time instead of recomputing it per query.
+   */
+  private readonly rhymeKeysOf: Map<string, string[]>;
 
   constructor(cmudictText: string) {
     this.prons = new Map();
     this.rhymeIndex = new Map();
     this.homophoneIndex = new Map();
+    this.rhymeKeysOf = new Map();
 
     for (const rawLine of cmudictText.split("\n")) {
       // Strip trailing comment.
@@ -44,6 +51,9 @@ export class PhoneticDictionary {
         let bucket = this.rhymeIndex.get(key);
         if (!bucket) this.rhymeIndex.set(key, (bucket = new Set()));
         bucket.add(word);
+        let keys = this.rhymeKeysOf.get(word);
+        if (!keys) this.rhymeKeysOf.set(word, (keys = []));
+        keys.push(key);
       }
       const homoKey = phonemes.map(stripStress).join(" ");
       let hb = this.homophoneIndex.get(homoKey);
@@ -71,6 +81,9 @@ export class PhoneticDictionary {
         let bucket = dict.rhymeIndex.get(rk);
         if (!bucket) dict.rhymeIndex.set(rk, (bucket = new Set()));
         bucket.add(word);
+        let keys = dict.rhymeKeysOf.get(word);
+        if (!keys) dict.rhymeKeysOf.set(word, (keys = []));
+        keys.push(rk);
       }
       let hb = dict.homophoneIndex.get(ph);
       if (!hb) dict.homophoneIndex.set(ph, (hb = new Set()));
@@ -106,14 +119,10 @@ export class PhoneticDictionary {
    */
   rhymes(word: string): string[] {
     const w = word.toLowerCase();
-    const prons = this.prons.get(w);
-    if (!prons) return [];
+    if (!this.prons.has(w)) return [];
     const result = new Set<string>();
-    for (const p of prons) {
-      const key = PhoneticDictionary.rhymeKey(p);
-      if (key !== null) {
-        for (const r of this.rhymeIndex.get(key) ?? []) result.add(r);
-      }
+    for (const key of this.rhymeKeysOf.get(w) ?? []) {
+      for (const r of this.rhymeIndex.get(key) ?? []) result.add(r);
     }
     result.delete(w);
     return [...result].sort();
