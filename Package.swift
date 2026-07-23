@@ -13,6 +13,7 @@ let package = Package(
                 .copy("Resources/cmudict.dict"),
                 .copy("Resources/enable.txt"),
                 .copy("Resources/biblical.txt"),
+                .copy("Resources/dance.txt"),
             ]
         ),
         .testTarget(

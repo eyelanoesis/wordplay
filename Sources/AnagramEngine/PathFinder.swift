@@ -133,6 +133,8 @@ public struct PathFinder: Sendable {
         case .fusion: return "\(b) sound-overlaps \(a)"
         case .hidden: return "\(b) is spelled inside \(a)"
         case .audible: return "you can hear \(b) inside \(a)"
+        case .reversal: return "\(b): \(a) spelled backwards"
+        case .association: return "\(b) keeps company with \(a)"
         }
     }
 }

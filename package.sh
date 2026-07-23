@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 APP_NAME="Wordplay"          # bundle / display name
 EXEC_NAME="Anagrammer"        # SPM product (binary) name
 BUNDLE_ID="org.abstreet.wordplay"
-VERSION="7.1.0"
+VERSION="7.2.0"
 BUILD_DIR=".build/release"
 # Every version gets its own bundle, side by side; nothing is EVER overwritten.
 APP="dist/${APP_NAME}-${VERSION}.app"
@@ -40,6 +40,7 @@ fi
 cp "Sources/${EXEC_NAME}/Resources/cmudict.dict" "${CONTENTS}/Resources/cmudict.dict"
 cp "Sources/${EXEC_NAME}/Resources/enable.txt" "${CONTENTS}/Resources/enable.txt"
 cp "Sources/${EXEC_NAME}/Resources/biblical.txt" "${CONTENTS}/Resources/biblical.txt"
+cp "Sources/${EXEC_NAME}/Resources/dance.txt" "${CONTENTS}/Resources/dance.txt"
 
 cat > "${CONTENTS}/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

@@ -16,6 +16,8 @@ public struct ConnectionWeb: Sendable {
         case fusion = "Fusion"              // overlaps by sound (brangel)
         case hidden = "Hidden inside"       // spelled inside the word
         case audible = "Heard inside"       // audible in the pronunciation
+        case reversal = "Reversal"          // the word spelled backwards
+        case association = "Association"    // keeps company in meaning
         public var id: String { rawValue }
     }
 
@@ -36,17 +38,23 @@ public struct ConnectionWeb: Sendable {
     private let ladder: WordLadder
     private let phonetics: PhoneticDictionary?
     private let fusion: FusionFinder?
+    private let words: WordList?
+    private let associations: (@Sendable (String, Int) -> [String])?
 
     public init(
         cryptic: CrypticHelper,
         ladder: WordLadder,
         phonetics: PhoneticDictionary?,
-        fusion: FusionFinder?
+        fusion: FusionFinder?,
+        words: WordList? = nil,
+        associations: (@Sendable (String, Int) -> [String])? = nil
     ) {
         self.cryptic = cryptic
         self.ladder = ladder
         self.phonetics = phonetics
         self.fusion = fusion
+        self.words = words
+        self.associations = associations
     }
 
     /// Up to `perRelation` neighbors of `word` for every relation type.
@@ -107,6 +115,17 @@ public struct ConnectionWeb: Sendable {
         if relations.contains(.hidden) {
             add(cryptic.hiddenWords(in: w, minLength: 3).map(\.word).filter { $0 != w },
                 .hidden) { "\($0) is spelled inside \(w)" }
+        }
+
+        if relations.contains(.reversal), let words {
+            let rev = String(w.reversed())
+            if rev != w, words.contains(rev) {
+                add([rev], .reversal) { "\($0): \(w) spelled backwards" }
+            }
+        }
+
+        if relations.contains(.association), let associations {
+            add(associations(w, perRelation * 2), .association) { "\($0) keeps company with \(w)" }
         }
 
         return nodes

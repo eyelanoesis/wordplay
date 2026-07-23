@@ -14,6 +14,9 @@ public struct WordList: Sendable {
     /// Number of words loaded.
     public var count: Int { words.count }
 
+    /// Whether the list contains `word` (lowercased exact match).
+    public func contains(_ word: String) -> Bool { words.contains(word) }
+
     public init(words: [String]) {
         self.words = words
     }

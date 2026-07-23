@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import NaturalLanguage
 import AnagramEngine
 
 /// Selectable word lists.
@@ -7,13 +8,37 @@ enum DictionaryChoice: String, CaseIterable, Identifiable {
     case scrabble = "Scrabble (ENABLE)"
     case system = "System (large)"
     case biblical = "Biblical (KJV)"
+    case dance = "Dance"
     var id: String { rawValue }
     var subtitle: String {
         switch self {
         case .scrabble: return "172k tournament words — clean, no archaic cruft"
         case .system: return "236k words incl. proper/archaic forms"
         case .biblical: return "curated KJV lexicon — names, places, and King James vocabulary"
+        case .dance: return "curated dance lexicon — styles, ballet terms, movement, the studio"
         }
+    }
+}
+
+/// On-device semantic neighbors via Apple's NLEmbedding — the Association
+/// dimension. Fully offline; nil-safe if the embedding is unavailable.
+final class SemanticNeighbors: @unchecked Sendable {
+    static let shared = SemanticNeighbors()
+    private let embedding = NLEmbedding.wordEmbedding(for: .english)
+
+    /// Up to `count` lowercase alphabetic neighbors of `word`, kept to the
+    /// active word list so associations speak the chosen dictionary.
+    func neighbors(of word: String, count: Int, within list: WordList?) -> [String] {
+        guard let embedding else { return [] }
+        var out: [String] = []
+        for (neighbor, _) in embedding.neighbors(for: word, maximumCount: count * 4) {
+            let w = neighbor.lowercased()
+            guard w != word, w.allSatisfy({ $0 >= "a" && $0 <= "z" }) else { continue }
+            if let list, !list.contains(w) { continue }
+            if !out.contains(w) { out.append(w) }
+            if out.count >= count { break }
+        }
+        return out
     }
 }
 
@@ -129,6 +154,11 @@ final class WordStore: ObservableObject {
             return (try? WordList.systemDefault()) ?? WordList(words: [])
         case .biblical:
             if let url = resourceURL("biblical", "txt"), let list = try? WordList.load(from: url) {
+                return list
+            }
+            return (try? WordList.systemDefault()) ?? WordList(words: [])
+        case .dance:
+            if let url = resourceURL("dance", "txt"), let list = try? WordList.load(from: url) {
                 return list
             }
             return (try? WordList.systemDefault()) ?? WordList(words: [])

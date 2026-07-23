@@ -63,6 +63,22 @@ private func makeWeb() -> ConnectionWeb {
     }
 }
 
+@Test func webFindsReversalsAndAssociations() {
+    let list = WordList(words: ["stressed", "desserts", "level", "brain"])
+    let web = ConnectionWeb(
+        cryptic: CrypticHelper(wordList: list),
+        ladder: WordLadder(wordList: list),
+        phonetics: nil, fusion: nil,
+        words: list,
+        associations: { w, _ in w == "stressed" ? ["brain"] : [] })
+    let nodes = web.connections(of: "stressed",
+                                relations: [.reversal, .association])
+    #expect(nodes.first { $0.word == "desserts" }?.relation == .reversal)
+    #expect(nodes.first { $0.word == "brain" }?.relation == .association)
+    // A palindrome is not its own reversal-neighbor.
+    #expect(web.connections(of: "level", relations: [.reversal]).isEmpty)
+}
+
 @Test func webRespectsRelationFilter() {
     let web = makeWeb()
     // Only one-letter steps allowed: nothing else may appear.

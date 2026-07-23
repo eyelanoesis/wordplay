@@ -51,6 +51,8 @@ final class ChimeEngine: @unchecked Sendable {
         case .fusion: freq = 440.00          // A4
         case .hidden: freq = 587.33          // D5
         case .audible: freq = 659.26         // E5
+        case .reversal: freq = 783.99        // G5
+        case .association: freq = 880.00     // A5
         }
         play(rawFrequency: freq)
     }

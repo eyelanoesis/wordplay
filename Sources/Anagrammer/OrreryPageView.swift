@@ -18,6 +18,7 @@ struct OrreryPageView: View {
     @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
     @AppStorage("web7.autoWrite") private var autoWrite = false
     @AppStorage("web7.glyphs") private var glyphsOn = false
+    @AppStorage("web7.perRelation") private var perRelation = 1
 
     /// The eased orbit pivot — the sphere turns around the active word, the
     /// way a 3D modelling app orbits its selection. A class box so per-frame
@@ -171,16 +172,22 @@ struct OrreryPageView: View {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
         let relations = relationsOn
         guard !relations.isEmpty else {
-            model.status = "all seven dimensions are set aside — switch some on in the ☰ menu"
+            model.status = "all dimensions are set aside — switch some on in the ☰ menu"
             return
         }
         model.isBusy = true
+        let count = auto ? WebDimensions.autoCount(for: perRelation) : perRelation
+        let wordsList = store.wordList
+        let assoc: @Sendable (String, Int) -> [String] = { w, n in
+            SemanticNeighbors.shared.neighbors(of: w, count: n, within: wordsList)
+        }
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
             let found = await Task.detached(priority: auto ? .utility : .userInitiated) {
-                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics, fusion: fusion)
-                    .connections(of: target, perRelation: auto ? 2 : 4, relations: relations)
+                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics,
+                              fusion: fusion, words: wordsList, associations: assoc)
+                    .connections(of: target, perRelation: count, relations: relations)
             }.value
             let placed = model.inscribe(from: target, with: found, viral: auto, now: Date())
             if placed > 0 {
@@ -241,12 +248,21 @@ struct OrreryPageView: View {
                         }
                     }
                     Divider()
-                    Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
-                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
+                    Button("All dimensions on") { relationsOnRaw = WebDimensions.allRaw }
+                    Button("All dimensions off") { relationsOnRaw = "" }
+                    Divider()
+                    Picker("complexity", selection: $perRelation) {
+                        ForEach(WebDimensions.complexities, id: \.0) { value, label in
+                            Text(label).tag(value)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄ ♅ ♆)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("The seven dimensions: check which kinds of connection may be drawn. All are off by default. Also here: show or hide the planetary glyphs.")
+                    .help("The nine dimensions: check which kinds of connection may be drawn (all off by default). Also here: complexity — how many connections each dimension contributes — and the glyphs.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -310,10 +326,10 @@ struct OrreryPageView: View {
                 .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be drawn (struck through = off).")
             }
             Spacer()
-            Text("drag to orbit · ⌥drag to pan · scroll/pinch to dolly · click a word to open it")
+            Text("drag orbits the active word · ⌥drag pans · scroll dollies · green = unopened")
                 .font(.system(.caption2, design: .serif).italic())
                 .foregroundStyle(ink.opacity(0.45))
-                .help("Navigate like a 3D modelling app: drag anywhere to orbit the sphere, hold ⌥ (option) and drag to pan, pinch or two-finger scroll to move closer or further. Click a word to inscribe its connections around it; hover to learn why it is connected.")
+                .help("Navigate like a 3D modelling app: drag to orbit (the pivot follows the active word), ⌥-drag to pan, pinch or two-finger scroll to dolly. Verdigris-green words are unopened — click one to grow it; ochre words grew on their own. Hover for why a word is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(parchment.opacity(0.92), in: Capsule())
@@ -458,12 +474,21 @@ struct OrreryPageView: View {
 
         let base = entry.generation == 0 ? 24.0 : (isCurrent ? 15.0 : 13.0)
         let fontSize = max(5, min(30, base * s * 1.15))
+        // Navigation ink: ochre = self-written, verdigris = unopened frontier.
+        let wordColor: Color
+        if entry.viral {
+            wordColor = ochre
+        } else if !entry.expanded && entry.dying == nil && entry.generation > 0 {
+            wordColor = WebDimensions.frontier
+        } else {
+            wordColor = ink
+        }
         ctx.draw(
             Text(entry.id)
                 .font(.system(size: fontSize, design: .serif)
                     .weight(entry.generation == 0 || isCurrent ? .semibold : .regular)
                     .italic())
-                .foregroundStyle((entry.viral ? ochre : ink).opacity(alpha)),
+                .foregroundStyle(wordColor.opacity(alpha)),
             at: p)
         if let relation = entry.relation {
             let mark = CGPoint(x: p.x, y: p.y - fontSize * 0.9)

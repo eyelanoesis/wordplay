@@ -14,6 +14,8 @@ extension ConnectionWeb.Relation {
         case .fusion: return Color(red: 0.15, green: 0.70, blue: 0.45)
         case .hidden: return Color(red: 0.75, green: 0.60, blue: 0.10)
         case .audible: return Color(red: 0.15, green: 0.65, blue: 0.75)
+        case .reversal: return Color(red: 0.40, green: 0.42, blue: 0.55)
+        case .association: return Color(red: 0.80, green: 0.25, blue: 0.72)
         }
     }
 
@@ -26,6 +28,8 @@ extension ConnectionWeb.Relation {
         case .fusion: return "phonetic fusion"
         case .hidden: return "substring"
         case .audible: return "audible substring"
+        case .reversal: return "mirror word"
+        case .association: return "semantic association"
         }
     }
 
@@ -46,6 +50,10 @@ extension ConnectionWeb.Relation {
             return "one word is spelled, letter for letter, inside the other (ear inside heart)"
         case .audible:
             return "one word can be heard inside the other's pronunciation, whatever the spelling (cane inside hurricane)"
+        case .reversal:
+            return "one word is the other spelled backwards (stressed / desserts)"
+        case .association:
+            return "the words keep close company in meaning — neighbors in an on-device semantic map, no network involved (harbor / wharf)"
         }
     }
 }
@@ -71,6 +79,20 @@ enum WebDimensions {
     static func cadenceLabel(_ s: Double) -> String {
         s == 1 ? "every second" : "every \(Int(s)) seconds"
     }
+
+    /// Complexity: how many connections each dimension may contribute when a
+    /// word is grown by hand. Self-writing uses roughly half.
+    static let complexities: [(Int, String)] =
+        [(1, "sparse — one per dimension"), (2, "modest — two"),
+         (4, "rich — four"), (6, "lush — six")]
+
+    static func autoCount(for perRelation: Int) -> Int {
+        max(1, perRelation - 2)
+    }
+
+    /// Frontier ink: unopened, clickable words — the doors not yet walked
+    /// through. Verdigris against the parchment.
+    static let frontier = Color(red: 0.13, green: 0.42, blue: 0.38)
 }
 
 // MARK: - Trackpad zoom (pinch + two-finger scroll)
@@ -362,6 +384,7 @@ struct CrosswordPageView: View {
     @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
     @AppStorage("web7.autoWrite") private var autoWrite = false
     @AppStorage("web7.glyphs") private var glyphsOn = false
+    @AppStorage("web7.perRelation") private var perRelation = 1
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -425,16 +448,22 @@ struct CrosswordPageView: View {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
         let relations = relationsOn
         guard !relations.isEmpty else {
-            model.status = "all seven dimensions are off — switch some on in the ☰ menu or click the legend below"
+            model.status = "all dimensions are off — switch some on in the ☰ menu or click the legend below"
             return
         }
         model.isBusy = true
+        let count = auto ? WebDimensions.autoCount(for: perRelation) : perRelation
+        let wordsList = store.wordList
+        let assoc: @Sendable (String, Int) -> [String] = { w, n in
+            SemanticNeighbors.shared.neighbors(of: w, count: n, within: wordsList)
+        }
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
             let found = await Task.detached(priority: auto ? .utility : .userInitiated) {
-                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics, fusion: fusion)
-                    .connections(of: target, perRelation: auto ? 3 : 6, relations: relations)
+                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics,
+                              fusion: fusion, words: wordsList, associations: assoc)
+                    .connections(of: target, perRelation: count, relations: relations)
             }.value
             var woven = 0
             for connection in found {
@@ -568,12 +597,21 @@ struct CrosswordPageView: View {
                         }
                     }
                     Divider()
-                    Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
-                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
+                    Button("All dimensions on") { relationsOnRaw = WebDimensions.allRaw }
+                    Button("All dimensions off") { relationsOnRaw = "" }
+                    Divider()
+                    Picker("complexity", selection: $perRelation) {
+                        ForEach(WebDimensions.complexities, id: \.0) { value, label in
+                            Text(label).tag(value)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄ ♅ ♆)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("The seven dimensions: check which kinds of connection may weave new words. All are off by default; what is already on the grid stays. The legend below toggles the same switches.")
+                    .help("The nine dimensions: check which kinds of connection may weave new words (all off by default; what is on the grid stays). Also here: complexity — how many connections each dimension contributes per word — and the glyphs.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -643,9 +681,9 @@ struct CrosswordPageView: View {
                 .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be woven (struck through = off).")
             }
             Spacer()
-            Text("click a word to grow it · drag to pan · scroll/pinch to zoom · red words grew on their own")
+            Text("green = unexplored, click to grow · red = grew on its own · drag pans · scroll zooms")
                 .font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
-                .help("Click any word on the grid to weave its connections around it. Drag anywhere to pan the endless page; pinch or two-finger scroll to zoom. Words written in red ink were added by the puzzle itself, not by you. Hover over a word to see why it is connected.")
+                .help("The ink is the map: verdigris-green words are the unexplored frontier (click one to weave its connections), dark words are already grown, red words were added by the puzzle itself. Drag to pan, pinch or two-finger scroll to zoom, hover for why a word is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(paper.opacity(0.9), in: Capsule())
@@ -806,9 +844,16 @@ struct CrosswordPageView: View {
                          lineWidth: isCurrent ? 1.8 : 1)
 
                 let pulse = isCurrent ? 0.75 + 0.25 * (1 + sin(t * 2.2)) / 2 : 1.0
-                let letterColor = entry.viral
-                    ? Color(red: 0.72, green: 0.15, blue: 0.12)
-                    : inkDark
+                // Navigation ink: red = self-written, verdigris = unopened
+                // frontier (click to grow), dark ink = already explored.
+                let letterColor: Color
+                if entry.viral {
+                    letterColor = Color(red: 0.72, green: 0.15, blue: 0.12)
+                } else if !entry.expanded && entry.relation != nil {
+                    letterColor = WebDimensions.frontier
+                } else {
+                    letterColor = inkDark
+                }
                 w.draw(
                     Text(String(ch).uppercased())
                         .font(.system(size: cellSize * 0.5, weight: .bold, design: .monospaced))

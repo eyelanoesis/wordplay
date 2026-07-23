@@ -16,6 +16,8 @@ extension ConnectionWeb.Relation {
         case .fusion: return "♂"      // Mars — two forged into one
         case .hidden: return "♄"      // Saturn — lead, buried within
         case .audible: return "♃"     // Jupiter — the voice within the voice
+        case .reversal: return "♆"    // Neptune — the mirror sea (a modern)
+        case .association: return "♅" // Uranus — the electric kinship (a modern)
         }
     }
 }
@@ -253,6 +255,7 @@ struct SigilPageView: View {
     @AppStorage("web7.autoWrite") private var autoWrite = false
     @AppStorage("web7.voiceOn") private var voiceOn = false
     @AppStorage("web7.glyphs") private var glyphsOn = false
+    @AppStorage("web7.perRelation") private var perRelation = 1
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -334,16 +337,22 @@ struct SigilPageView: View {
         guard !model.isBusy, let cryptic = store.cryptic, let ladder = store.ladder else { return }
         let relations = relationsOn
         guard !relations.isEmpty else {
-            model.status = "all seven dimensions are set aside — switch some on in the ☰ menu or touch the legend below"
+            model.status = "all dimensions are set aside — switch some on in the ☰ menu or touch the legend below"
             return
         }
         model.isBusy = true
+        let count = auto ? WebDimensions.autoCount(for: perRelation) : perRelation
+        let wordsList = store.wordList
+        let assoc: @Sendable (String, Int) -> [String] = { w, n in
+            SemanticNeighbors.shared.neighbors(of: w, count: n, within: wordsList)
+        }
         Task {
             let fusion = await store.fusionFinder()
             let phonetics = store.phonetics
             let found = await Task.detached(priority: auto ? .utility : .userInitiated) {
-                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics, fusion: fusion)
-                    .connections(of: target, perRelation: auto ? 2 : 4, relations: relations)
+                ConnectionWeb(cryptic: cryptic, ladder: ladder, phonetics: phonetics,
+                              fusion: fusion, words: wordsList, associations: assoc)
+                    .connections(of: target, perRelation: count, relations: relations)
             }.value
             let placed = model.inscribe(from: target, with: found, viral: auto, now: Date())
             if auto, placed > 0, let c = model.entry(for: target)?.circleCenter {
@@ -466,12 +475,21 @@ struct SigilPageView: View {
                         }
                     }
                     Divider()
-                    Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
-                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
+                    Button("All dimensions on") { relationsOnRaw = WebDimensions.allRaw }
+                    Button("All dimensions off") { relationsOnRaw = "" }
+                    Divider()
+                    Picker("complexity", selection: $perRelation) {
+                        ForEach(WebDimensions.complexities, id: \.0) { value, label in
+                            Text(label).tag(value)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄ ♅ ♆)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("The seven dimensions: check which kinds of connection may be drawn. All are off by default; switching one off skips it from then on, ink already on the page stays. The legend below toggles the same switches. Also here: show or hide the planetary glyphs.")
+                    .help("The nine dimensions: check which kinds of connection may be drawn (all off by default; ink already on the page stays). Also here: complexity — how many connections each dimension contributes per circle — and the glyphs.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -555,10 +573,10 @@ struct SigilPageView: View {
                 .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be drawn (struck through = off).")
             }
             Spacer()
-            Text("touch a word to open its circle · drag to wander · scroll/pinch to zoom")
+            Text("green ink = unopened doors · ochre = the codex's own hand · drag wanders · scroll zooms")
                 .font(.system(.caption2, design: .serif).italic())
                 .foregroundStyle(ink.opacity(0.45))
-                .help("Click any word to open its circle and inscribe its connections. Drag anywhere to wander across the page; pinch or two-finger scroll to lean closer or further. Words in red ochre were written by the codex itself. Hover over a word to learn why it is connected.")
+                .help("The ink is the map: verdigris-green words are unopened doors (touch one to open its circle), sepia words are already opened, red ochre words were written by the codex itself. Drag to wander, pinch or two-finger scroll to zoom, hover for why a word is connected.")
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
         .background(parchment.opacity(0.92), in: Capsule())
@@ -842,10 +860,20 @@ struct SigilPageView: View {
         // Keep script upright-ish: flip when on the left half of the circle.
         let upsideDown = cos(angle) < 0
         layer.rotate(by: .radians(angle + (upsideDown ? .pi : 0)))
+        // Navigation ink: ochre = self-written, verdigris = unopened frontier
+        // (touch to open), sepia = already opened.
+        let scriptColor: Color
+        if entry.viral {
+            scriptColor = ochre
+        } else if !entry.expanded && entry.dying == nil {
+            scriptColor = WebDimensions.frontier
+        } else {
+            scriptColor = ink
+        }
         let script = Text(entry.id)
             .font(.system(size: isCurrent ? 15 : 13, design: .serif)
                 .weight(isCurrent ? .semibold : .regular).italic())
-            .foregroundStyle((entry.viral ? ochre : ink).opacity(alpha))
+            .foregroundStyle(scriptColor.opacity(alpha))
         layer.draw(script, at: CGPoint(x: upsideDown ? -26 : 26, y: 0),
                    anchor: upsideDown ? .trailing : .leading)
 
