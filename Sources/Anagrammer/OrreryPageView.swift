@@ -17,6 +17,13 @@ struct OrreryPageView: View {
     @AppStorage("web7.dims") private var relationsOnRaw = ""
     @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
     @AppStorage("web7.autoWrite") private var autoWrite = false
+    @AppStorage("web7.glyphs") private var glyphsOn = false
+
+    /// The eased orbit pivot — the sphere turns around the active word, the
+    /// way a 3D modelling app orbits its selection. A class box so per-frame
+    /// easing inside the Canvas doesn't fight SwiftUI's state system.
+    private final class AnchorBox { var value = SIMD3<Double>(0, 0, 0) }
+    @State private var anchor = AnchorBox()
 
     @State private var word = ""
     @State private var yaw = 0.6
@@ -115,10 +122,10 @@ struct OrreryPageView: View {
         return p
     }
 
-    /// Perspective-project a world point. Returns screen point + scale, or nil
-    /// when behind the near plane.
+    /// Perspective-project a world point, relative to the orbit anchor.
+    /// Returns screen point + scale, or nil when behind the near plane.
     private func project(_ v: SIMD3<Double>, in size: CGSize) -> (CGPoint, Double)? {
-        let p = rotated(v)
+        let p = rotated(v - anchor.value)
         let depth = p.z + dist
         guard depth > 80 else { return nil }
         let s = 560.0 / depth
@@ -229,14 +236,17 @@ struct OrreryPageView: View {
                     .help("Wipe the sphere (and the codex — they are one web). This also clears what was saved between launches.")
                 Menu {
                     ForEach(ConnectionWeb.Relation.allCases) { r in
-                        Toggle(isOn: relationBinding(r)) { Text("\(r.glyph)  \(r.rawValue)") }
+                        Toggle(isOn: relationBinding(r)) {
+                            Text(glyphsOn ? "\(r.glyph)  \(r.rawValue)" : r.rawValue)
+                        }
                     }
                     Divider()
                     Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("Which of the seven dimensions may forge new connections (\(relationsOn.count) of 7 on). All are OFF by default — switch on the ones you want to see.")
+                    .help("The seven dimensions: check which kinds of connection may be drawn. All are off by default. Also here: show or hide the planetary glyphs.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -248,24 +258,20 @@ struct OrreryPageView: View {
                 } label: { Image(systemName: "timer") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("How often the sphere grows on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to self-writing.")
+                    .help("How many seconds between the sphere's own inscriptions while self-writing plays. Clicking a word is always immediate.")
                 Button {
                     autoWrite.toggle()
                     model.autoSpread = autoWrite
                 } label: { Image(systemName: autoWrite ? "pause.fill" : "play.fill") }
                     .controlSize(.small)
                     .tint(autoWrite ? ochre : nil)
-                    .help(autoWrite
-                        ? "The sphere is growing on its own, \(WebDimensions.cadenceLabel(spreadSeconds)). Click to pause."
-                        : "Self-writing is OFF (the default). Click to let the sphere grow on its own; needs at least one dimension switched on.")
+                    .help("Play / pause the self-writing (off by default). While playing, the sphere grows on its own at the chosen cadence; needs at least one dimension switched on.")
                 Button {
                     soundOn.toggle()
                     ChimeEngine.shared.muted = !soundOn
                 } label: { Image(systemName: soundOn ? "speaker.wave.2" : "speaker.slash") }
                     .controlSize(.small)
-                    .help(soundOn
-                        ? "Sound is ON — a pentatonic chime per dimension. Click to silence."
-                        : "Sound is OFF (the default). Click to hear the chimes.")
+                    .help("Sound on / off (off by default): a pentatonic chime per dimension as words are inscribed.")
                 Spacer()
             }
             if let status = model.status {
@@ -287,8 +293,13 @@ struct OrreryPageView: View {
                 let on = relationsOn.contains(r)
                 Button { relationBinding(r).wrappedValue = !on } label: {
                     HStack(spacing: 4) {
-                        Text(r.glyph).font(.system(size: 12))
-                            .foregroundStyle(r.color.opacity(on ? 0.85 : 0.25))
+                        if glyphsOn {
+                            Text(r.glyph).font(.system(size: 12))
+                                .foregroundStyle(r.color.opacity(on ? 0.85 : 0.25))
+                        } else {
+                            Circle().fill(r.color.opacity(on ? 0.7 : 0.2))
+                                .frame(width: 8, height: 8)
+                        }
                         Text(r.rawValue)
                             .font(.system(.caption2, design: .serif))
                             .foregroundStyle(ink.opacity(on ? 0.6 : 0.3))
@@ -296,7 +307,7 @@ struct OrreryPageView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help("\(r.glyph) \(r.rawValue): \(r.explanation). \(on ? "On — click to set aside." : "Set aside — click to allow.")")
+                .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be drawn (struck through = off).")
             }
             Spacer()
             Text("drag to orbit · ⌥drag to pan · scroll/pinch to dolly · click a word to open it")
@@ -360,6 +371,10 @@ struct OrreryPageView: View {
     }
 
     private func drawScene(_ ctx: GraphicsContext, size: CGSize, now: Date) {
+        // The orbit pivot glides to the active word — the anchor of the view.
+        let target = model.current.flatMap { positions[$0] } ?? .zero
+        anchor.value += (target - anchor.value) * 0.06
+
         // Parchment wash, same hand as the codex.
         ctx.fill(Path(CGRect(origin: .zero, size: size)),
                  with: .radialGradient(
@@ -420,7 +435,8 @@ struct OrreryPageView: View {
             var started = false
             for k in 0...72 {
                 let a = Double(k) / 72 * 2 * .pi
-                let world = (u * cos(a) + v * sin(a)) * R
+                // Rings ride with the anchor — the celestial frame of the view.
+                let world = (u * cos(a) + v * sin(a)) * R + anchor.value
                 guard let (p, _) = project(world, in: size) else { started = false; continue }
                 if started { path.addLine(to: p) } else { path.move(to: p); started = true }
             }
@@ -450,11 +466,19 @@ struct OrreryPageView: View {
                 .foregroundStyle((entry.viral ? ochre : ink).opacity(alpha)),
             at: p)
         if let relation = entry.relation {
-            ctx.draw(
-                Text(relation.glyph)
-                    .font(.system(size: max(6, min(16, 11 * s * 1.15))))
-                    .foregroundStyle(relation.color.opacity(0.9 * alpha)),
-                at: CGPoint(x: p.x, y: p.y - fontSize * 0.9))
+            let mark = CGPoint(x: p.x, y: p.y - fontSize * 0.9)
+            if glyphsOn {
+                ctx.draw(
+                    Text(relation.glyph)
+                        .font(.system(size: max(6, min(16, 11 * s * 1.15))))
+                        .foregroundStyle(relation.color.opacity(0.9 * alpha)),
+                    at: mark)
+            } else {
+                let r = max(1.5, min(4, 2.6 * s))
+                ctx.fill(Path(ellipseIn: CGRect(x: mark.x - r, y: mark.y - r,
+                                                width: r * 2, height: r * 2)),
+                         with: .color(relation.color.opacity(0.75 * alpha)))
+            }
         }
     }
 
@@ -465,7 +489,13 @@ struct OrreryPageView: View {
               let (anchor, _) = project(pos, in: size) else { return }
         var caption = entry.detail
         if let relation = entry.relation {
-            caption = "\(relation.glyph) \(relation.rawValue) — \(relation.explanation)\n" + caption
+            let mark = glyphsOn ? "\(relation.glyph) " : ""
+            caption = "\(mark)\(relation.rawValue) — \(relation.explanation)\n" + caption
+        }
+        if let parent = entry.parent {
+            caption += model.entry(for: parent) == nil
+                ? "\njoined through \(parent), whose ink has since faded"
+                : "\njoined through \(parent)"
         }
         if let phones = store.phonetics?.pronunciations(of: id).first {
             caption += "\n/\(phones.joined(separator: " "))/"

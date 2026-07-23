@@ -361,6 +361,7 @@ struct CrosswordPageView: View {
     @AppStorage("web7.dims") private var relationsOnRaw = ""
     @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
     @AppStorage("web7.autoWrite") private var autoWrite = false
+    @AppStorage("web7.glyphs") private var glyphsOn = false
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -560,20 +561,19 @@ struct CrosswordPageView: View {
                      : "\(model.placed.count) words woven")
                     .font(.caption).foregroundStyle(.secondary)
                     .help("How many words are on the grid. The page holds \(model.maxWords) at most.")
-                Button("Clear") { model.clear() }
-                    .controlSize(.small)
-                    .disabled(model.placed.isEmpty)
-                    .help("Wipe the grid and start over. Nothing is saved.")
                 Menu {
                     ForEach(ConnectionWeb.Relation.allCases) { r in
-                        Toggle(isOn: relationBinding(r)) { Text("\(r.glyph)  \(r.rawValue)") }
+                        Toggle(isOn: relationBinding(r)) {
+                            Text(glyphsOn ? "\(r.glyph)  \(r.rawValue)" : r.rawValue)
+                        }
                     }
                     Divider()
                     Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("Which of the seven dimensions may weave new words (\(relationsOn.count) of 7 on). Unchecked dimensions are skipped entirely when a word grows; what is already on the grid stays. The legend below toggles the same switches.")
+                    .help("The seven dimensions: check which kinds of connection may weave new words. All are off by default; what is already on the grid stays. The legend below toggles the same switches.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -585,7 +585,7 @@ struct CrosswordPageView: View {
                 } label: { Image(systemName: "timer") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("How often the puzzle grows on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to automatic growth; clicking a word grows it immediately.")
+                    .help("How many seconds between the puzzle's own moves while self-writing plays. Clicking a word grows it immediately.")
                 Button {
                     autoWrite.toggle()
                     model.autoSpread = autoWrite
@@ -594,26 +594,24 @@ struct CrosswordPageView: View {
                 }
                     .controlSize(.small)
                     .tint(autoWrite ? Color(red: 0.85, green: 0.25, blue: 0.25) : nil)
-                    .help(autoWrite
-                        ? "The puzzle is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it picks an unexpanded word and weaves its connections (shown in red). Click to pause — you can still grow words by clicking them."
-                        : "Self-writing is OFF (the default). Click to let the puzzle grow on its own; needs at least one dimension switched on.")
+                    .help("Play / pause the self-writing (off by default). While playing, the puzzle picks an unexpanded word at the chosen cadence and weaves its connections, shown in red. Paused, you still grow words by clicking them.")
                 Button {
                     soundOn.toggle()
                     ChimeEngine.shared.muted = !soundOn
                 } label: { Image(systemName: soundOn ? "speaker.wave.2" : "speaker.slash") }
                     .controlSize(.small)
-                    .help(soundOn
-                        ? "Sound is ON — each dimension plays its own pentatonic note when a word is woven; self-growth plays a low detuned interval. Click to silence."
-                        : "Sound is OFF (the default). Click to hear a chime for each dimension as words are woven.")
-                Button { exportPNG() } label: { Image(systemName: "camera") }
+                    .help("Sound on / off (off by default): a pentatonic note per dimension as words are woven; self-growth plays a low detuned interval.")
+                Menu {
+                    Toggle(isOn: $showLog) { Text("show the weave log") }
+                    Divider()
+                    Button("Export page as PNG…") { exportPNG() }
+                        .disabled(model.placed.isEmpty)
+                    Button("Clear the grid") { model.clear() }
+                        .disabled(model.placed.isEmpty)
+                } label: { Image(systemName: "ellipsis.circle") }
                     .controlSize(.small)
-                    .disabled(model.placed.isEmpty)
-                    .help("Export the visible page as a retina PNG.")
-                Button { showLog.toggle() } label: {
-                    Image(systemName: showLog ? "text.append" : "text.justify.left")
-                }
-                    .controlSize(.small)
-                    .help("Show or hide the weave log — a timestamped record of every word woven and every failed attempt.")
+                    .fixedSize()
+                    .help("More: the weave log, PNG export, and clearing the grid (the crossword is not saved between launches).")
                 Spacer()
             }
             if let status = model.status {
@@ -642,7 +640,7 @@ struct CrosswordPageView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help("\(r.rawValue): \(r.explanation). \(on ? "On — click to stop this dimension from weaving new words." : "Off — click to allow it again.")")
+                .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be woven (struck through = off).")
             }
             Spacer()
             Text("click a word to grow it · drag to pan · scroll/pinch to zoom · red words grew on their own")

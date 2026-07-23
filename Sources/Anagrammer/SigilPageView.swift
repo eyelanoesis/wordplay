@@ -252,6 +252,7 @@ struct SigilPageView: View {
     @AppStorage("web7.spreadSeconds") private var spreadSeconds = 3.0
     @AppStorage("web7.autoWrite") private var autoWrite = false
     @AppStorage("web7.voiceOn") private var voiceOn = false
+    @AppStorage("web7.glyphs") private var glyphsOn = false
     @State private var showLog = true
     @State private var panning = false
     @State private var lastDrag = CGSize.zero
@@ -458,20 +459,19 @@ struct SigilPageView: View {
                      : "\(model.words.count) inscriptions")
                     .font(.system(.caption, design: .serif)).foregroundStyle(.secondary)
                     .help("How many words are inscribed. The page holds \(model.maxWords) at most; near capacity the oldest unopened ink fades so the codex can keep writing.")
-                Button("Clear") { model.clear() }
-                    .controlSize(.small)
-                    .disabled(model.words.isEmpty)
-                    .help("Wipe the page and the codex's memory of it. This also clears what was saved between launches.")
                 Menu {
                     ForEach(ConnectionWeb.Relation.allCases) { r in
-                        Toggle(isOn: relationBinding(r)) { Text("\(r.glyph)  \(r.rawValue)") }
+                        Toggle(isOn: relationBinding(r)) {
+                            Text(glyphsOn ? "\(r.glyph)  \(r.rawValue)" : r.rawValue)
+                        }
                     }
                     Divider()
                     Button("All seven on") { relationsOnRaw = WebDimensions.allRaw }
+                    Toggle(isOn: $glyphsOn) { Text("planetary glyphs (☉ ☽ ☿ ♀ ♂ ♃ ♄)") }
                 } label: { Image(systemName: "slider.horizontal.3") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("Which of the seven dimensions may forge new connections (\(relationsOn.count) of 7 on). A dimension set aside is skipped entirely when a circle opens; ink already on the page remains. The legend below toggles the same switches.")
+                    .help("The seven dimensions: check which kinds of connection may be drawn. All are off by default; switching one off skips it from then on, ink already on the page stays. The legend below toggles the same switches. Also here: show or hide the planetary glyphs.")
                 Menu {
                     Picker("cadence", selection: $spreadSeconds) {
                         ForEach(WebDimensions.cadences, id: \.self) { s in
@@ -483,7 +483,7 @@ struct SigilPageView: View {
                 } label: { Image(systemName: "timer") }
                     .controlSize(.small)
                     .fixedSize()
-                    .help("How often the codex writes on its own — currently \(WebDimensions.cadenceLabel(spreadSeconds)). Applies only to the self-writing; opening a circle by hand is immediate.")
+                    .help("How many seconds between the codex's own inscriptions while self-writing plays. Opening a circle by hand is always immediate.")
                 Button {
                     autoWrite.toggle()
                     model.autoSpread = autoWrite
@@ -492,36 +492,31 @@ struct SigilPageView: View {
                 }
                     .controlSize(.small)
                     .tint(autoWrite ? ochre : nil)
-                    .help(autoWrite
-                        ? "The codex is writing itself: \(WebDimensions.cadenceLabel(spreadSeconds)) it opens a new circle or returns to deepen an old one (marked ✦ in the log, red ochre ink on the page). Click to still the pen — you can still open circles by clicking words."
-                        : "The pen is stilled (the default). Click to let the codex write itself; needs at least one dimension switched on.")
+                    .help("Play / pause the self-writing (off by default). While playing, the codex opens or deepens a circle on its own at the chosen cadence — ✦ in the log, red ochre on the page. Paused, you still open circles by clicking words.")
                 Button {
                     soundOn.toggle()
                     ChimeEngine.shared.muted = !soundOn
                 } label: { Image(systemName: soundOn ? "speaker.wave.2" : "speaker.slash") }
                     .controlSize(.small)
-                    .help(soundOn
-                        ? "Sound is ON — each dimension rings its own pentatonic note when inscribed; self-growth sounds a low detuned interval. Click to silence everything, the spoken voice included."
-                        : "Sound is OFF (the default). Click to hear the codex — a chime per dimension, and the voice if you enable it.")
-                Button {
-                    voiceOn.toggle()
-                    ChimeEngine.shared.voiceEnabled = voiceOn
-                    if voiceOn, let w = model.current { ChimeEngine.shared.speak(w) }
-                } label: { Image(systemName: voiceOn ? "quote.bubble.fill" : "quote.bubble") }
+                    .help("Sound on / off (off by default). When on: a pentatonic note per dimension as words are inscribed, a low detuned interval for self-growth, and the voice if enabled.")
+                Menu {
+                    Toggle(isOn: Binding(
+                        get: { voiceOn },
+                        set: { on in
+                            voiceOn = on
+                            ChimeEngine.shared.voiceEnabled = on
+                            if on, let w = model.current { ChimeEngine.shared.speak(w) }
+                        })) { Text("voice — speak each word as its circle opens") }
+                    Toggle(isOn: $showLog) { Text("show the codex's log") }
+                    Divider()
+                    Button("Export page as PNG…") { exportPNG() }
+                        .disabled(model.words.isEmpty)
+                    Button("Clear the page") { model.clear() }
+                        .disabled(model.words.isEmpty)
+                } label: { Image(systemName: "ellipsis.circle") }
                     .controlSize(.small)
-                    .tint(voiceOn ? ink : nil)
-                    .help(voiceOn
-                        ? "The codex speaks each word aloud as its circle opens. Click to silence the voice (chimes keep playing unless muted)."
-                        : "Let the codex speak each word aloud as its circle opens.")
-                Button { exportPNG() } label: { Image(systemName: "camera") }
-                    .controlSize(.small)
-                    .disabled(model.words.isEmpty)
-                    .help("Export the visible page as a retina PNG.")
-                Button { showLog.toggle() } label: {
-                    Image(systemName: showLog ? "book.closed.fill" : "book.closed")
-                }
-                    .controlSize(.small)
-                    .help("Show or hide the codex's own log — a timestamped record of every inscription, deepening, and fading.")
+                    .fixedSize()
+                    .help("More: the spoken voice, the log panel, PNG export, and clearing the page (which also clears what is saved between launches).")
                 Spacer()
             }
             if let status = model.status {
@@ -543,8 +538,13 @@ struct SigilPageView: View {
                 let on = relationsOn.contains(r)
                 Button { relationBinding(r).wrappedValue = !on } label: {
                     HStack(spacing: 4) {
-                        Text(r.glyph).font(.system(size: 12))
-                            .foregroundStyle(r.color.opacity(on ? 0.85 : 0.25))
+                        if glyphsOn {
+                            Text(r.glyph).font(.system(size: 12))
+                                .foregroundStyle(r.color.opacity(on ? 0.85 : 0.25))
+                        } else {
+                            Circle().fill(r.color.opacity(on ? 0.7 : 0.2))
+                                .frame(width: 8, height: 8)
+                        }
                         Text(r.rawValue)
                             .font(.system(.caption2, design: .serif))
                             .foregroundStyle(ink.opacity(on ? 0.6 : 0.3))
@@ -552,7 +552,7 @@ struct SigilPageView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help("\(r.glyph) \(r.rawValue): \(r.explanation). \(on ? "On — click to set this dimension aside; the codex will stop drawing such connections." : "Set aside — click to let the codex use it again.")")
+                .help("\(r.rawValue): \(r.explanation). Click to toggle whether this kind of connection may be drawn (struck through = off).")
             }
             Spacer()
             Text("touch a word to open its circle · drag to wander · scroll/pinch to zoom")
@@ -656,11 +656,11 @@ struct SigilPageView: View {
         model.saveSoon()
     }
 
-    /// Slow hand-tremor: everything on the page breathes a little.
+    /// Slow hand-tremor: everything on the page breathes, barely.
     private func drift(_ p: CGPoint, seed: Int, t: TimeInterval) -> CGPoint {
         let s = Double(seed & 1023)
-        return CGPoint(x: p.x + CGFloat(sin(t * 0.11 + s) * 3.2),
-                       y: p.y + CGFloat(cos(t * 0.087 + s * 1.7) * 3.2))
+        return CGPoint(x: p.x + CGFloat(sin(t * 0.07 + s) * 1.4),
+                       y: p.y + CGFloat(cos(t * 0.055 + s * 1.7) * 1.4))
     }
 
     private func drawPage(_ ctx: GraphicsContext, size: CGSize, now: Date) {
@@ -849,13 +849,20 @@ struct SigilPageView: View {
         layer.draw(script, at: CGPoint(x: upsideDown ? -26 : 26, y: 0),
                    anchor: upsideDown ? .trailing : .leading)
 
-        // The planet of its dimension, at the rim.
+        // Its dimension's mark at the rim: the planet glyph, or a plain dot.
         if let relation = entry.relation {
-            ctx.draw(
-                Text(relation.glyph)
-                    .font(.system(size: 13))
-                    .foregroundStyle(relation.color.opacity(0.9 * alpha)),
-                at: CGPoint(x: p.x - entry.outDir.dx * 12, y: p.y - entry.outDir.dy * 12))
+            let mark = CGPoint(x: p.x - entry.outDir.dx * 12, y: p.y - entry.outDir.dy * 12)
+            if glyphsOn {
+                ctx.draw(
+                    Text(relation.glyph)
+                        .font(.system(size: 13))
+                        .foregroundStyle(relation.color.opacity(0.9 * alpha)),
+                    at: mark)
+            } else {
+                ctx.fill(Path(ellipseIn: CGRect(x: mark.x - 2.5, y: mark.y - 2.5,
+                                                width: 5, height: 5)),
+                         with: .color(relation.color.opacity(0.75 * alpha)))
+            }
         }
     }
 
@@ -864,7 +871,13 @@ struct SigilPageView: View {
               let entry = model.entry(for: id), !entry.detail.isEmpty else { return }
         var caption = entry.detail
         if let relation = entry.relation {
-            caption = "\(relation.glyph) \(relation.rawValue) — \(relation.explanation)\n" + caption
+            let mark = glyphsOn ? "\(relation.glyph) " : ""
+            caption = "\(mark)\(relation.rawValue) — \(relation.explanation)\n" + caption
+        }
+        if let parent = entry.parent {
+            caption += model.entry(for: parent) == nil
+                ? "\njoined through \(parent), whose ink has since faded"
+                : "\njoined through \(parent)"
         }
         if let phones = store.phonetics?.pronunciations(of: id).first {
             caption += "\n/\(phones.joined(separator: " "))/"

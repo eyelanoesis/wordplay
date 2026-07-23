@@ -7,11 +7,16 @@ cd "$(dirname "$0")"
 APP_NAME="Wordplay"          # bundle / display name
 EXEC_NAME="Anagrammer"        # SPM product (binary) name
 BUNDLE_ID="org.abstreet.wordplay"
-VERSION="7.0.0"
+VERSION="7.1.0"
 BUILD_DIR=".build/release"
-# Every version gets its own bundle, side by side; nothing is overwritten.
+# Every version gets its own bundle, side by side; nothing is EVER overwritten.
 APP="dist/${APP_NAME}-${VERSION}.app"
 CONTENTS="${APP}/Contents"
+
+if [ -d "${APP}" ]; then
+    echo "ERROR: ${APP} already exists — bump VERSION in package.sh first." >&2
+    exit 1
+fi
 
 echo "==> Building release binary…"
 swift build -c release
@@ -20,7 +25,6 @@ echo "==> Generating app icon…"
 swift Resources/make_icon.swift "/tmp/AppIcon.icns" >/dev/null
 
 echo "==> Assembling bundle at ${APP}…"
-rm -rf "${APP}"
 mkdir -p "${CONTENTS}/MacOS" "${CONTENTS}/Resources"
 
 cp "${BUILD_DIR}/${EXEC_NAME}" "${CONTENTS}/MacOS/${EXEC_NAME}"
@@ -61,10 +65,5 @@ PLIST
 echo "==> Code signing (ad-hoc)…"
 codesign --force --sign - "${APP}"    # single binary; --deep is deprecated
 
-# Unversioned name stays as a convenience alias for the latest build.
-rm -rf "dist/${APP_NAME}.app"
-ln -s "${APP_NAME}-${VERSION}.app" "dist/${APP_NAME}.app"
-
 echo "==> Done: ${APP}"
-echo "    (dist/${APP_NAME}.app -> latest)"
 echo "    Launch with:  open \"${APP}\""
