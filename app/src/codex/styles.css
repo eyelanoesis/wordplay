@@ -1,0 +1,147 @@
+/* The codex's dress — lifted from the legacy web/codex.html <style> block,
+   including the popover/dictionary controls added at v7.2.0 parity. */
+:root { --ink: #52381f; --ink-soft: rgba(82,56,31,.6); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body { font-family: Georgia, serif; color: var(--ink); background: #dccca6;
+  -webkit-text-size-adjust: 100%; }
+/* the canvas owns all gestures; never let the browser pan/zoom the page */
+#page { position: fixed; inset: 0; cursor: grab; touch-action: none; }
+#page.panning { cursor: grabbing; }
+.hud {
+  position: fixed; top: 12px; left: 12px; right: 290px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  background: rgba(233,221,194,.92); border: 1px solid rgba(82,56,31,.3);
+  border-radius: 12px; padding: 9px 12px; z-index: 5; max-width: 900px;
+}
+input[type=text] {
+  font: inherit; font-size: 16px; padding: 6px 10px; width: 170px;
+  border: 1px solid var(--ink-soft); border-radius: 7px;
+  background: rgba(255,255,255,.5); color: var(--ink);
+}
+button {
+  font: inherit; font-variant: small-caps; letter-spacing: .04em;
+  padding: 6px 14px; border: 1px solid var(--ink); border-radius: 7px;
+  background: var(--ink); color: #eee3ca; cursor: pointer;
+  touch-action: manipulation;
+}
+button.ghost { background: transparent; color: var(--ink); border-color: var(--ink-soft); }
+button.ghost.on { background: rgba(98,24,16,.12); border-color: #621810; color: #621810; }
+button:hover { filter: brightness(1.12); }
+#status { font-style: italic; font-size: .82rem; color: var(--ink-soft); width: 100%; }
+#count { font-size: .82rem; color: var(--ink-soft); }
+#codexlog {
+  position: fixed; top: 76px; right: 12px; width: 250px; max-height: 60vh;
+  overflow-y: auto; background: rgba(233,221,194,.95);
+  border: 1px solid rgba(82,56,31,.3); border-radius: 12px;
+  padding: 12px; z-index: 5; font-size: .78rem; line-height: 1.45;
+  -webkit-overflow-scrolling: touch;
+}
+#codexlog h2 { font-size: .95rem; font-style: italic; margin-bottom: 6px;
+  border-bottom: 1px solid rgba(82,56,31,.35); padding-bottom: 5px; }
+#codexlog .v { color: #7a2a12; }
+#legend {
+  position: fixed; bottom: 12px; left: 12px; right: 12px;
+  display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+  background: rgba(233,221,194,.92); border: 1px solid rgba(82,56,31,.25);
+  border-radius: 999px; padding: 6px 16px; z-index: 5; font-size: .75rem;
+  color: var(--ink-soft);
+}
+#legend .hint { margin-left: auto; font-style: italic; }
+#tip {
+  position: fixed; display: none; background: rgba(244,238,220,.97);
+  border: 1px solid rgba(82,56,31,.5); border-radius: 7px; padding: 6px 10px;
+  font-size: .78rem; z-index: 6; pointer-events: none; white-space: pre;
+  font-family: 'Courier New', monospace;
+}
+
+/* ── the dictionary switcher and popovers ─────────────────────────────── */
+.popwrap { position: relative; }
+.popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+  background: rgba(238,227,202,.98); border: 1px solid rgba(82,56,31,.35);
+  border-radius: 10px; padding: 10px 12px; width: 240px;
+  box-shadow: 0 6px 18px rgba(40,25,10,.25); font-size: .82rem;
+  max-height: 70vh; overflow-y: auto;
+}
+.popover.hidden { display: none; }
+.popover label { display: flex; align-items: center; gap: 6px; padding: 3px 0; cursor: pointer; }
+.popover .label { font-variant: small-caps; letter-spacing: .04em; color: var(--ink-soft); margin: 2px 0; }
+.popover .row { display: flex; gap: 6px; margin: 6px 0; }
+.popover hr { border: none; border-top: 1px solid rgba(82,56,31,.25); margin: 8px 0; }
+button.mini {
+  padding: 3px 9px; font-size: .72rem; font-variant: small-caps;
+  border: 1px solid var(--ink-soft); border-radius: 6px;
+  background: transparent; color: var(--ink);
+}
+select#dict {
+  font: inherit; font-size: .82rem; padding: 6px 8px; border-radius: 7px;
+  border: 1px solid var(--ink-soft); background: rgba(255,255,255,.5); color: var(--ink);
+}
+.legendItem {
+  background: none; border: none; padding: 2px 2px; margin: 0; font: inherit;
+  font-size: .75rem; color: var(--ink-soft); cursor: pointer;
+  display: inline-flex; align-items: center;
+}
+.lmark { display: inline-block; margin-right: 4px; }
+.ldot { width: 8px; height: 8px; border-radius: 2px; }
+
+/* ── phones & narrow windows ──────────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* full-width HUD; the log becomes a bottom sheet toggled by a button */
+  .hud {
+    right: 12px; left: 8px; top: 8px; gap: 6px; padding: 8px 10px;
+    max-width: none; justify-content: flex-start;
+  }
+  .hud input[type=text] { width: 42%; flex: 1 1 42%; min-width: 120px; }
+  .hud button { padding: 8px 12px; }        /* bigger tap targets */
+  #count { width: 100%; order: 99; }
+  #status { font-size: .78rem; }
+  #codexlog {
+    top: auto; bottom: 62px; left: 8px; right: 8px; width: auto;
+    max-height: 34vh; transform: translateY(0); transition: transform .25s ease;
+  }
+  #codexlog.hidden { transform: translateY(130%); }
+  #legend {
+    justify-content: center; gap: 8px 12px; padding: 7px 12px 9px;
+    font-size: .68rem; bottom: 8px;
+  }
+  #legend .hint { display: none; }          /* the gesture hint doesn't fit */
+  #tip { max-width: 80vw; white-space: normal; }
+  .popover { width: calc(100vw - 24px); max-width: 320px; }
+}
+/* the log toggle only appears where the log is a sheet */
+#logtoggle { display: none; }
+@media (max-width: 720px) { #logtoggle { display: inline-block; } }
+
+/* ── folded controls (mobile default) ─────────────────────────────────── */
+/* A single seal button sits in the corner; tapping it unfurls the HUD.
+   Desktop never folds — the class is only applied under the media query. */
+#fold {
+  display: none;
+  position: fixed; top: 10px; left: 10px; z-index: 6;
+  width: 46px; height: 46px; padding: 0; border-radius: 50%;
+  font-size: 20px; line-height: 46px; text-align: center;
+  background: rgba(233,221,194,.94); color: var(--ink);
+  border: 1px solid rgba(82,56,31,.4);
+  box-shadow: 0 2px 10px rgba(60,40,15,.25);
+}
+@media (max-width: 720px) {
+  #fold { display: block; }
+  /* When folded, the HUD is lifted off-screen and the fold button shows. */
+  body.folded .hud { transform: translateY(-140%); pointer-events: none; }
+  body.folded #legend { transform: translateY(160%); pointer-events: none; }
+  .hud { transition: transform .28s ease; }
+  #legend { transition: transform .28s ease; }
+  /* the fold button rotates into an × when the HUD is open */
+  body:not(.folded) #fold { transform: rotate(45deg); }
+}
+
+/* boot splash (removed by main.ts once the codex is awake) */
+#boot {
+  position: fixed; inset: 0; display: flex; align-items: center;
+  justify-content: center; background: #dccca6; z-index: 10;
+  font-style: italic; color: var(--ink-soft); font-size: 1.1rem;
+  transition: opacity .4s ease;
+}
+#boot.gone { opacity: 0; pointer-events: none; }

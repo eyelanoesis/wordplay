@@ -3,13 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Wordplay</title>
+  <title>The Codex — Wordplay</title>
 </head>
 <body>
-  <main id="app" style="font-family: Georgia, serif; padding: 2rem;">
-    <h1>Wordplay</h1>
-    <p id="status">loading…</p>
-  </main>
-  <script type="module" src="/src/main.ts"></script>
+<canvas id="page"></canvas>
+<button id="fold" title="controls" aria-label="show controls">+</button>
+
+<div class="hud">
+  <input type="text" id="word" placeholder="a word…" autofocus>
+  <span style="color:var(--ink-soft)">→</span>
+  <input type="text" id="toword" placeholder="…the way to (optional)">
+  <button id="go">Inscribe</button>
+  <span id="count"></span>
+  <button class="ghost" id="clear">Clear</button>
+  <select id="dict" title="the active dictionary — anagram, one-letter, hidden, and reversal connections all read from it"></select>
+  <div class="popwrap">
+    <button class="ghost" id="dimsBtn" title="which connections may be drawn, how many, and the glyphs">☰ dims</button>
+    <div class="popover hidden" id="dimsPanel"></div>
+  </div>
+  <div class="popwrap">
+    <button class="ghost" id="cadenceBtn" title="seconds between the codex's own inscriptions while self-writing plays">⏱ cadence</button>
+    <div class="popover hidden" id="cadencePanel"></div>
+  </div>
+  <button class="ghost" id="spread" title="the codex writes itself (off by default)">✦ self-writing</button>
+  <button class="ghost" id="chimes" title="each dimension has a note (off by default)">♪ chimes</button>
+  <button class="ghost" id="voice" title="the codex speaks (off by default)">❝ voice</button>
+  <button class="ghost" id="save" title="export the page">⤓ png</button>
+  <button class="ghost" id="logtoggle" title="show the codex log">☰ log</button>
+  <span id="status"></span>
+</div>
+
+<div id="codexlog"><h2>the codex</h2><div id="loglines">the page is blank, and waiting.</div></div>
+<div id="legend"></div>
+<div id="tip"></div>
+<div id="boot">the codex is being bound…</div>
+
+<script type="module" src="/src/main.ts"></script>
 </body>
 </html>
